@@ -1,0 +1,420 @@
+{
+	"info": {
+		"_postman_id": "smart-inventory-api",
+		"name": "Smart Inventory API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "smart-inventory-system"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"password123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["auth", "login"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Register",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"newuser\",\n  \"email\": \"newuser@example.com\",\n  \"password\": \"password123\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"role\": \"employee\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/register",
+							"host": ["{{baseUrl}}"],
+							"path": ["auth", "register"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Current User",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/auth/me",
+							"host": ["{{baseUrl}}"],
+							"path": ["auth", "me"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Inventory",
+			"item": [
+				{
+					"name": "Get All Inventory",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/inventory?page=1&limit=20",
+							"host": ["{{baseUrl}}"],
+							"path": ["inventory"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Inventory Item",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Product Name\",\n  \"category\": \"Electronics\",\n  \"quantity\": 100,\n  \"price\": {\n    \"cost\": 50.00,\n    \"selling\": 75.00\n  },\n  \"supplier_id\": \"supplier_id_here\",\n  \"minStockLevel\": 10,\n  \"maxStockLevel\": 500\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/inventory",
+							"host": ["{{baseUrl}}"],
+							"path": ["inventory"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Inventory Item",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Product Name\",\n  \"quantity\": 150\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/inventory/{{inventoryId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["inventory", "{{inventoryId}}"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Inventory Item",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/inventory/{{inventoryId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["inventory", "{{inventoryId}}"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Assets",
+			"item": [
+				{
+					"name": "Get All Assets",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assets",
+							"host": ["{{baseUrl}}"],
+							"path": ["assets"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Asset",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"asset_name\": \"Laptop Computer\",\n  \"category\": \"Electronics\",\n  \"type\": \"electronics\",\n  \"purchase_date\": \"2024-01-15\",\n  \"purchase_cost\": {\n    \"amount\": 1200.00,\n    \"currency\": \"USD\"\n  },\n  \"depreciation\": {\n    \"method\": \"straight_line\",\n    \"usefulLife\": 5,\n    \"salvageValue\": 100\n  }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assets",
+							"host": ["{{baseUrl}}"],
+							"path": ["assets"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Transactions",
+			"item": [
+				{
+					"name": "Get All Transactions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/transactions",
+							"host": ["{{baseUrl}}"],
+							"path": ["transactions"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Transaction",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"type\": \"purchase\",\n  \"items\": [\n    {\n      \"inventory_item\": \"inventory_item_id\",\n      \"quantity\": 10,\n      \"unit_price\": 50.00\n    }\n  ],\n  \"reference\": {\n    \"order_id\": \"PO-001\",\n    \"notes\": \"Initial purchase\"\n  }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/transactions",
+							"host": ["{{baseUrl}}"],
+							"path": ["transactions"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Analytics",
+			"item": [
+				{
+					"name": "Dashboard Overview",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/analytics/dashboard/overview",
+							"host": ["{{baseUrl}}"],
+							"path": ["analytics", "dashboard", "overview"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Inventory Trends",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/analytics/inventory/trends",
+							"host": ["{{baseUrl}}"],
+							"path": ["analytics", "inventory", "trends"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "AI Features",
+			"item": [
+				{
+					"name": "Predict Demand",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"inventory_id\": \"inventory_item_id\",\n  \"period\": 30\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/ai/predict-demand",
+							"host": ["{{baseUrl}}"],
+							"path": ["ai", "predict-demand"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Restock Suggestions",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/ai/auto-restock-suggestions",
+							"host": ["{{baseUrl}}"],
+							"path": ["ai", "auto-restock-suggestions"]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5000/api"
+		},
+		{
+			"key": "token",
+			"value": "your-jwt-token-here"
+		},
+		{
+			"key": "inventoryId",
+			"value": "inventory-item-id-here"
+		}
+	]
+}
