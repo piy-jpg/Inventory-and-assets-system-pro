@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BellIcon } from '@heroicons/react/24/outline';
 import { alertsAPI } from '../services/api';
@@ -8,18 +8,21 @@ const NotificationBell = () => {
   const [isOpen, setIsOpen] = useState(false);
   
   const { data: activeCount } = useQuery(
-    'activeAlertsCount',
-    alertsAPI.getActiveCount,
+    'alerts-navbar-stats',
+    alertsAPI.getAlertStats,
     {
-      refetchInterval: 30000,
+      refetchInterval: 10000,
+      refetchOnWindowFocus: true,
     }
   );
 
   const { data: alertsData } = useQuery(
-    'recentAlerts',
+    'alerts-navbar-feed',
     () => alertsAPI.getAll({ limit: 5, status: 'active' }),
     {
       enabled: isOpen,
+      refetchInterval: 10000,
+      refetchOnWindowFocus: true,
     }
   );
 
@@ -39,7 +42,7 @@ const NotificationBell = () => {
         className="p-2 rounded-full text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
       >
         <BellIcon className="h-6 w-6" />
-        {activeCount?.data?.count > 0 && (
+        {(activeCount?.data?.data?.active || 0) > 0 && (
           <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-400 ring-2 ring-white" />
         )}
       </button>
@@ -58,8 +61,8 @@ const NotificationBell = () => {
             </div>
             
             <div className="max-h-96 overflow-y-auto">
-              {alertsData?.data?.alerts?.length > 0 ? (
-                alertsData.data.alerts.map((alert) => (
+              {(alertsData?.data?.data?.alerts || []).length > 0 ? (
+                (alertsData?.data?.data?.alerts || []).slice(0, 5).map((alert) => (
                   <motion.div
                     key={alert._id}
                     initial={{ opacity: 0, x: -10 }}

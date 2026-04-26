@@ -6,7 +6,7 @@ const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const morgan = require('morgan');
 const http = require('http');
-const socketIo = require('socket.io');
+const { initializeSocket } = require('./config/socket');
 
 const connectDB = require('./config/database');
 const ensureDefaultAdmin = require('./startup/ensureDefaultAdmin');
@@ -15,12 +15,8 @@ const errorHandler = require('./middleware/errorHandler');
 const app = express();
 const server = http.createServer(app);
 
-const io = socketIo(server, {
-  cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
-    methods: ["GET", "POST"]
-  }
-});
+// Initialize Socket.IO with custom configuration
+const io = initializeSocket(server);
 
 app.use(helmet());
 app.use(compression());
@@ -57,6 +53,14 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
@@ -79,7 +83,7 @@ app.set('io', io);
 
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
-app.use('/api/inventory', require('./routes/inventory'));
+app.use('/api/inventory', require('./routes/inventory_simple'));
 app.use('/api/assets', require('./routes/assets'));
 app.use('/api/transactions', require('./routes/transactions'));
 app.use('/api/suppliers', require('./routes/suppliers'));
@@ -97,17 +101,27 @@ app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/ai', require('./routes/ai'));
 app.use('/api/demo', require('./routes/demo'));
 
+// Serve static files from uploads directory
+app.use('/uploads', express.static('uploads'));
+
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3001;
 
 const startServer = async () => {
-  await connectDB();
-  await ensureDefaultAdmin();
+  const databaseConnected = await connectDB();
+  if (databaseConnected) {
+    await ensureDefaultAdmin();
+  } else {
+    console.warn('Skipping default admin sync because the database is unavailable.');
+  }
 
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    if (!databaseConnected) {
+      console.log('Running in demo mode: auth uses seeded demo credentials and data routes may fall back.');
+    }
   });
 };
 

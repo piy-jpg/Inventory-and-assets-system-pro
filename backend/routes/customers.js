@@ -257,6 +257,13 @@ router.post('/', authMiddleware, async (req, res, next) => {
   try {
     const customer = new Customer(req.body);
     await customer.save();
+
+    const io = req.app.get('io');
+    io.emit('customer-created', {
+      type: 'created',
+      data: { customer },
+    });
+
     res.status(201).json({ success: true, data: { customer } });
   } catch (error) {
     next(error);
@@ -273,6 +280,12 @@ router.put('/:id', authMiddleware, async (req, res, next) => {
     if (!customer) {
       return res.status(404).json({ success: false, message: 'Customer not found' });
     }
+
+    const io = req.app.get('io');
+    io.emit('customer-updated', {
+      type: 'updated',
+      data: { customer },
+    });
 
     res.json({ success: true, data: { customer } });
   } catch (error) {

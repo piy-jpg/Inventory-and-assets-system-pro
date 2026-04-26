@@ -99,6 +99,24 @@ router.post('/', authMiddleware, async (req, res, next) => {
     });
     await transaction.save();
 
+    const io = req.app.get('io');
+    io.emit('transaction-created', {
+      type: 'purchase',
+      data: {
+        purchase,
+        transaction,
+      },
+    });
+    if (purchase.status === 'received') {
+      io.emit('inventory-updated', {
+        type: 'purchase-received',
+        data: {
+          purchaseId: purchase._id,
+          productIds: purchase.items.map((item) => item.product),
+        },
+      });
+    }
+
     res.status(201).json({ success: true, data: { purchase } });
   } catch (error) {
     next(error);
@@ -134,6 +152,24 @@ router.put('/:id/status', authMiddleware, async (req, res, next) => {
     
     purchase.status = status;
     await purchase.save();
+
+    const io = req.app.get('io');
+    io.emit('transaction-updated', {
+      type: 'purchase-status-updated',
+      data: {
+        purchase,
+      },
+    });
+    if (status === 'received') {
+      io.emit('inventory-updated', {
+        type: 'purchase-received',
+        data: {
+          purchaseId: purchase._id,
+          productIds: purchase.items.map((item) => item.product),
+        },
+      });
+    }
+
     res.json({ success: true, data: { purchase } });
   } catch (error) {
     next(error);

@@ -57,6 +57,19 @@ router.get('/', authMiddleware, checkPermission('inventory_read'), async (req, r
   }
 });
 
+router.get('/categories/list', authMiddleware, checkPermission('inventory_read'), async (req, res, next) => {
+  try {
+    const categories = await Supplier.distinct('categories');
+    
+    res.json({
+      success: true,
+      data: { categories }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/:id', authMiddleware, checkPermission('inventory_read'), async (req, res, next) => {
   try {
     const supplier = await Supplier.findById(req.params.id)
@@ -179,19 +192,6 @@ router.post('/:id/performance', authMiddleware, checkPermission('inventory_write
       success: true,
       message: 'Supplier performance updated successfully',
       data: { supplier }
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get('/categories/list', authMiddleware, checkPermission('inventory_read'), async (req, res, next) => {
-  try {
-    const categories = await Supplier.distinct('categories');
-    
-    res.json({
-      success: true,
-      data: { categories }
     });
   } catch (error) {
     next(error);

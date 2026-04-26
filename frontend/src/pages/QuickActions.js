@@ -73,6 +73,15 @@ const readJson = (key) => {
   }
 };
 
+const buildPersistedAction = (action) => ({
+  id: action.id,
+  title: action.title,
+  href: action.href,
+  state: action.state || null,
+  color: action.color || 'gray',
+  badge: action.badge || 'Recent',
+});
+
 const QuickActions = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -80,41 +89,47 @@ const QuickActions = () => {
   const [searchFeedback, setSearchFeedback] = useState('');
   const [recentShortcuts, setRecentShortcuts] = useState([]);
   const [actionCounts, setActionCounts] = useState({});
+  const queryOptions = {
+    enabled: true,
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
+    keepPreviousData: true,
+  };
 
-  const { data: recentTransactions, isLoading: loadingTransactions } = useQuery(
+  const { data: recentTransactions, isLoading: loadingTransactions, isFetching: fetchingTransactions } = useQuery(
     'recent-transactions',
     () => transactionsAPI.getAll({ limit: 5, sortBy: 'date', sortOrder: 'desc' }),
-    { enabled: true }
+    queryOptions
   );
 
-  const { data: lowStockItems, isLoading: loadingLowStock } = useQuery(
+  const { data: lowStockItems, isLoading: loadingLowStock, isFetching: fetchingLowStock } = useQuery(
     'low-stock',
     inventoryAPI.getLowStock,
-    { enabled: true }
+    queryOptions
   );
 
-  const { data: recentAlerts } = useQuery(
+  const { data: recentAlerts, isFetching: fetchingAlerts } = useQuery(
     'recent-alerts',
     () => alertsAPI.getAll({ limit: 5, status: 'active' }),
-    { enabled: true }
+    queryOptions
   );
 
-  const { data: assetsSnapshot } = useQuery(
+  const { data: assetsSnapshot, isFetching: fetchingAssets } = useQuery(
     'quick-actions-assets',
     () => assetsAPI.getAll({ limit: 50, sortBy: 'updatedAt', sortOrder: 'desc' }),
-    { enabled: true }
+    queryOptions
   );
 
-  const { data: purchasesSnapshot } = useQuery(
+  const { data: purchasesSnapshot, isFetching: fetchingPurchases } = useQuery(
     'quick-actions-purchases',
     () => purchasesAPI.getAll({ limit: 20 }),
-    { enabled: true }
+    queryOptions
   );
 
-  const { data: salesSnapshot } = useQuery(
+  const { data: salesSnapshot, isFetching: fetchingSales } = useQuery(
     'quick-actions-sales',
     () => salesAPI.getAll({ limit: 20 }),
-    { enabled: true }
+    queryOptions
   );
 
   useEffect(() => {
@@ -124,13 +139,14 @@ const QuickActions = () => {
   }, []);
 
   const persistAction = (action) => {
+    const persistedAction = buildPersistedAction(action);
     const nextRecent = [
-      action,
-      ...recentShortcuts.filter((item) => item.id !== action.id),
+      persistedAction,
+      ...recentShortcuts.filter((item) => item.id !== persistedAction.id),
     ].slice(0, 6);
     const nextCounts = {
       ...actionCounts,
-      [action.id]: (actionCounts[action.id] || 0) + 1,
+      [persistedAction.id]: (actionCounts[persistedAction.id] || 0) + 1,
     };
 
     setRecentShortcuts(nextRecent);
@@ -140,13 +156,7 @@ const QuickActions = () => {
   };
 
   const launchAction = (action) => {
-    persistAction({
-      id: action.id,
-      title: action.title,
-      href: action.href,
-      color: action.color || 'gray',
-      badge: action.badge || 'Recent',
-    });
+    persistAction(action);
 
     if (action.navigate) {
       action.navigate();
@@ -156,12 +166,35 @@ const QuickActions = () => {
     navigate(action.href, action.state ? { state: action.state } : undefined);
   };
 
+  const launchSavedAction = (action) => {
+    persistAction(action);
+    navigate(action.href, action.state ? { state: action.state } : undefined);
+  };
+
   const lowStockList = lowStockItems?.data?.data?.lowStockItems || [];
   const alertsList = recentAlerts?.data?.data?.alerts || [];
   const transactionsList = recentTransactions?.data?.data?.transactions || [];
   const assetsList = assetsSnapshot?.data?.data?.assets || [];
   const purchasesList = purchasesSnapshot?.data?.data?.purchases || [];
   const salesList = salesSnapshot?.data?.data?.sales || [];
+  const isRefreshing = [
+    fetchingTransactions,
+    fetchingLowStock,
+    fetchingAlerts,
+    fetchingAssets,
+    fetchingPurchases,
+    fetchingSales,
+  ].some(Boolean);
+  const liveSummary = {
+    lowStock: lowStockList.length,
+    activeAlerts: alertsList.length,
+    openPurchases: purchasesList.filter((purchase) => !['received', 'completed'].includes(purchase.status)).length,
+    todaysSales: salesList.filter((sale) => {
+      const date = new Date(sale.sale_date || sale.createdAt || Date.now());
+      const now = new Date();
+      return date.toDateString() === now.toDateString();
+    }).length,
+  };
 
   const groupedActions = useMemo(() => [
     {
@@ -177,9 +210,9 @@ const QuickActions = () => {
       title: 'Sales Quick Actions',
       items: [
         { id: 'quick-pos-sale', title: 'Quick POS Sale', description: 'Jump straight into the POS tab', icon: CreditCardIcon, color: 'green', href: '/sell', state: { smartCommand: { openTab: 'pos' } } },
-        { id: 'generate-invoice', title: 'Generate Invoice', description: 'Open invoicing tools in sales', icon: DocumentTextIcon, color: 'blue', href: '/sell', state: { smartCommand: { openTab: 'invoices' } } },
+        { id: 'generate-invoice', title: 'Generate Invoice', description: 'Open invoicing tools in sales', icon: DocumentTextIcon, color: 'blue', href: '/sell/invoices', state: { smartCommand: { openTab: 'invoices' } } },
         { id: 'add-customer', title: 'Add Customer', description: 'Create a customer profile', icon: UserGroupIcon, color: 'cyan', href: '/contacts/create' },
-        { id: 'record-payment', title: 'Record Payment', description: 'Go to payment accounts and finance', icon: CurrencyDollarIcon, color: 'yellow', href: '/payment-accounts' },
+        { id: 'record-payment', title: 'Record Payment', description: 'Go to payment accounts and finance', icon: CurrencyDollarIcon, color: 'yellow', href: '/payment-accounts', state: { openTab: 'transactions', openTransactionForm: true, transactionType: 'deposit' } },
       ],
     },
     {
@@ -187,7 +220,7 @@ const QuickActions = () => {
       items: [
         { id: 'add-supplier', title: 'Add Supplier', description: 'Create a new supplier record', icon: BuildingOffice2Icon, color: 'purple', href: '/suppliers/create' },
         { id: 'create-po', title: 'Create Purchase Order', description: 'Open a new purchase form', icon: TruckIcon, color: 'blue', href: '/purchases/create' },
-        { id: 'purchase-return', title: 'Purchase Return', description: 'Open purchase return workflow', icon: ArrowPathIcon, color: 'orange', href: '/purchases/returns' },
+        { id: 'purchase-return', title: 'Purchase Return', description: 'Open purchase return workflow', icon: ArrowPathIcon, color: 'orange', href: '/purchases/returns', state: { purchaseStatus: 'returned' } },
       ],
     },
     {
@@ -201,8 +234,8 @@ const QuickActions = () => {
     {
       title: 'Payment & Finance Actions',
       items: [
-        { id: 'add-money', title: 'Add Money (Deposit)', description: 'Open payment accounts for deposits', icon: CurrencyDollarIcon, color: 'green', href: '/payment-accounts' },
-        { id: 'transfer-accounts', title: 'Transfer Between Accounts', description: 'Manage account transfers', icon: ArrowPathIcon, color: 'blue', href: '/payment-accounts' },
+        { id: 'add-money', title: 'Add Money (Deposit)', description: 'Open payment accounts for deposits', icon: CurrencyDollarIcon, color: 'green', href: '/payment-accounts', state: { openTab: 'transactions', openTransactionForm: true, transactionType: 'deposit' } },
+        { id: 'transfer-accounts', title: 'Transfer Between Accounts', description: 'Manage account transfers', icon: ArrowPathIcon, color: 'blue', href: '/payment-accounts', state: { openTab: 'transactions', openTransactionForm: true, transactionType: 'transfer' } },
         { id: 'quick-expense', title: 'Quick Expense Entry', description: 'Create an expense in one step', icon: CurrencyDollarIcon, color: 'red', href: '/expenses/create' },
       ],
     },
@@ -210,16 +243,16 @@ const QuickActions = () => {
       title: 'Asset Actions',
       items: [
         { id: 'add-asset', title: 'Add Asset', description: 'Register a new asset', icon: PlusIcon, color: 'cyan', href: '/assets/create' },
-        { id: 'assign-asset', title: 'Assign Asset', description: 'Open assets and assign ownership', icon: UserGroupIcon, color: 'blue', href: '/assets' },
-        { id: 'mark-maintenance', title: 'Mark Under Maintenance', description: 'Review assets needing service', icon: WrenchScrewdriverIcon, color: 'orange', href: '/assets' },
+        { id: 'assign-asset', title: 'Assign Asset', description: 'Open assets and assign ownership', icon: UserGroupIcon, color: 'blue', href: '/assets', state: { assetStatus: 'active' } },
+        { id: 'mark-maintenance', title: 'Mark Under Maintenance', description: 'Review assets needing service', icon: WrenchScrewdriverIcon, color: 'orange', href: '/assets', state: { assetStatus: 'maintenance_due' } },
       ],
     },
     {
       title: 'AI Actions',
       items: [
-        { id: 'suggest-reorder', title: 'Suggest Reorder', description: 'Jump to AI restock suggestions', icon: CpuChipIcon, color: 'indigo', href: '/ai-insights' },
-        { id: 'sales-insight', title: 'Generate Sales Insight', description: 'Open AI-powered sales insights', icon: ChartBarIcon, color: 'green', href: '/ai-insights' },
-        { id: 'analyze-expenses', title: 'Analyze Expenses', description: 'Review spend patterns with AI', icon: SparklesIcon, color: 'purple', href: '/ai-insights' },
+        { id: 'suggest-reorder', title: 'Suggest Reorder', description: 'Jump to AI restock suggestions', icon: CpuChipIcon, color: 'indigo', href: '/ai-insights/smart-reorder' },
+        { id: 'sales-insight', title: 'Generate Sales Insight', description: 'Open AI-powered sales insights', icon: ChartBarIcon, color: 'green', href: '/ai-insights/sales-intelligence' },
+        { id: 'analyze-expenses', title: 'Analyze Expenses', description: 'Review spend patterns with AI', icon: SparklesIcon, color: 'purple', href: '/ai-insights/expense-intelligence' },
       ],
     },
   ], []);
@@ -240,7 +273,7 @@ const QuickActions = () => {
       icon: ExclamationTriangleIcon,
       color: 'red',
       href: '/inventory',
-      state: { inventorySearch: lowStockList[0].name },
+      state: { inventorySearch: lowStockList[0].name, inventoryStatus: 'low_stock' },
     });
   }
   const maintenanceAsset = assetsList.find((asset) => ['maintenance_due', 'in_repair'].includes(asset.status));
@@ -252,17 +285,19 @@ const QuickActions = () => {
       icon: WrenchScrewdriverIcon,
       color: 'orange',
       href: '/assets',
+      state: { assetSearch: maintenanceAsset.asset_name, assetStatus: maintenanceAsset.status },
     });
   }
   const pendingPurchase = purchasesList.find((purchase) => ['pending', 'partial'].includes(purchase.payment_status));
   if (pendingPurchase) {
     dynamicActions.push({
       id: `collect-${pendingPurchase._id}`,
-      title: 'Collect Pending Payment',
-      description: `Follow up on ${pendingPurchase.purchase_id}`,
+      title: 'Review Pending Purchase',
+      description: `Open ${pendingPurchase.purchase_id} and follow up`,
       icon: CurrencyDollarIcon,
       color: 'yellow',
-      href: '/payment-accounts',
+      href: '/purchases',
+      state: { purchaseSearch: pendingPurchase.purchase_id, purchaseStatus: pendingPurchase.status || 'ordered' },
     });
   }
 
@@ -314,7 +349,7 @@ const QuickActions = () => {
         id: 'smart-low-stock',
         title: 'Show Low Stock',
         color: 'red',
-        navigate: () => navigate('/inventory', { state: { inventorySearch: 'low stock' } }),
+        navigate: () => navigate('/inventory', { state: { inventoryStatus: 'low_stock' } }),
       });
       setSearchFeedback('Opening inventory so you can review low-stock items.');
       return;
@@ -355,6 +390,38 @@ const QuickActions = () => {
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="page-title">Quick Actions</h1>
         <p className="page-subtitle">Command center for inventory, sales, purchases, assets, and finance.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700">
+            User: {user?.firstName || user?.username || 'Operator'}
+          </span>
+          <span className={`rounded-full px-3 py-1 text-sm font-medium ${isRefreshing ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+            {isRefreshing ? 'Refreshing live flow' : 'Live system sync active'}
+          </span>
+        </div>
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: -12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.05 }}
+        className="grid grid-cols-2 gap-3 lg:grid-cols-4"
+      >
+        <div className="rounded-2xl border border-red-100 bg-red-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-red-600">Low Stock</p>
+          <p className="mt-2 text-2xl font-bold text-red-900">{liveSummary.lowStock}</p>
+        </div>
+        <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">Active Alerts</p>
+          <p className="mt-2 text-2xl font-bold text-amber-900">{liveSummary.activeAlerts}</p>
+        </div>
+        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">Open Purchases</p>
+          <p className="mt-2 text-2xl font-bold text-blue-900">{liveSummary.openPurchases}</p>
+        </div>
+        <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">Today's Sales</p>
+          <p className="mt-2 text-2xl font-bold text-emerald-900">{liveSummary.todaysSales}</p>
+        </div>
       </motion.div>
 
       <motion.div
@@ -413,7 +480,7 @@ const QuickActions = () => {
               {recentShortcuts.map((action) => (
                 <button
                   key={action.id}
-                  onClick={() => navigate(action.href)}
+                  onClick={() => launchSavedAction(action)}
                   className="flex w-full items-center justify-between rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-left"
                 >
                   <div>

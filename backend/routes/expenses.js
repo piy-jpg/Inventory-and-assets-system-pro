@@ -71,6 +71,12 @@ router.post('/', authMiddleware, async (req, res, next) => {
     const expense = new Expense(expenseData);
     await expense.save();
 
+    const io = req.app.get('io');
+    io.emit('expense-created', {
+      type: 'created',
+      data: { expense },
+    });
+
     res.status(201).json({
       success: true,
       data: { expense }

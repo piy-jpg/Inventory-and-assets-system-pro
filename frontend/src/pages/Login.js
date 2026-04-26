@@ -1,45 +1,133 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
+import { EyeIcon, EyeSlashIcon, LockClosedIcon, UserIcon } from '@heroicons/react/24/outline';
 
 const Login = () => {
   const [formData, setFormData] = useState({
-    email: '',
+    identifier: '',
     password: '',
   });
+  const [errorMessage, setErrorMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [loginAttempts, setLoginAttempts] = useState(0);
+  const [isLocked, setIsLocked] = useState(false);
+  const [lockoutTime, setLockoutTime] = useState(0);
+  const [fieldErrors, setFieldErrors] = useState({});
   const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleChange = (e) => {
+    if (errorMessage) {
+      setErrorMessage('');
+    }
+    if (fieldErrors[e.target.name]) {
+      setFieldErrors(prev => ({ ...prev, [e.target.name]: '' }));
+    }
+
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
     });
   };
 
+  const validateForm = () => {
+    const errors = {};
+    
+    if (!formData.identifier.trim()) {
+      errors.identifier = 'Email or username is required';
+    } else if (formData.identifier.includes('@') && formData.identifier.match(/\.[^@]+$/)) {
+      // Only validate as email if it has a domain extension (like .com, .org, etc.)
+      if (!formData.identifier.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+        errors.identifier = 'Please enter a valid email address';
+      }
+    }
+    // Allow usernames with @ (like maanu@1) without email validation
+    
+    if (!formData.password) {
+      errors.password = 'Password is required';
+    }
+    // Remove minimum length requirement to support all user passwords
+    
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  useEffect(() => {
+    if (isLocked && lockoutTime > 0) {
+      const timer = setInterval(() => {
+        setLockoutTime(prev => {
+          if (prev <= 1) {
+            setIsLocked(false);
+            setLoginAttempts(0);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      
+      return () => clearInterval(timer);
+    }
+  }, [isLocked, lockoutTime]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Login form submitted with:', formData);
+    setErrorMessage('');
+
+    if (!validateForm()) {
+      return;
+    }
+
+    if (isLocked) {
+      setErrorMessage('Account is temporarily locked. Please try again later.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const result = await login(formData);
-      console.log('Login result:', result);
+      const result = await login({
+        identifier: formData.identifier.trim(),
+        password: formData.password,
+      });
+
       if (result.success) {
-        toast.success('Login successful!');
+        toast.success(result.warning || 'Login successful!');
+        setLoginAttempts(0);
         navigate('/dashboard');
       } else {
-        toast.error(result.error);
+        setLoginAttempts(prev => prev + 1);
+        
+        if (loginAttempts + 1 >= 3) {
+          setIsLocked(true);
+          setLockoutTime(30); // 30 seconds lockout
+          setErrorMessage('Too many failed attempts. Account locked for 30 seconds.');
+        } else {
+          setErrorMessage(result.error);
+          toast.error(result.error);
+        }
       }
     } catch (error) {
-      console.error('Login error:', error);
-      toast.error('Login failed. Please try again.');
+      setLoginAttempts(prev => prev + 1);
+      
+      if (loginAttempts + 1 >= 3) {
+        setIsLocked(true);
+        setLockoutTime(30);
+        setErrorMessage('Too many failed attempts. Account locked for 30 seconds.');
+      } else {
+        setErrorMessage('Login failed. Please try again.');
+        toast.error('Login failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleForgotPassword = () => {
+    toast('Password reset functionality would be implemented here');
   };
 
   return (
@@ -51,8 +139,8 @@ const Login = () => {
         className="max-w-md w-full space-y-8"
       >
         <div>
-          <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-primary-100">
-            <span className="text-2xl font-bold text-primary-600">SI</span>
+          <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-blue-100">
+            <span className="text-2xl font-bold text-blue-600">SI</span>
           </div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
             Smart Inventory System
@@ -69,40 +157,81 @@ const Login = () => {
           className="mt-8 space-y-6"
           onSubmit={handleSubmit}
         >
-          <div className="rounded-md shadow-sm -space-y-px">
+          <div className="space-y-4">
             <div>
-              <label htmlFor="email" className="label">
+              <label htmlFor="identifier" className="block text-sm font-medium text-gray-700">
                 Email or username
               </label>
-              <input
-                id="email"
-                name="email"
-                type="text"
-                autoComplete="username"
-                required
-                className="input rounded-t-md"
-                placeholder="Enter your email or username"
-                value={formData.email}
-                onChange={handleChange}
-              />
+              <div className="mt-1 relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <UserIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                </div>
+                <input
+                  id="identifier"
+                  name="identifier"
+                  type="text"
+                  autoComplete="username"
+                  required
+                  className={`input pl-10 ${fieldErrors.identifier ? 'border-red-500 focus:ring-red-500' : ''}`}
+                  placeholder="Email or username"
+                  value={formData.identifier}
+                  onChange={handleChange}
+                />
+              </div>
+              {fieldErrors.identifier && (
+                <p className="mt-2 text-sm text-red-600">{fieldErrors.identifier}</p>
+              )}
             </div>
+            
             <div>
-              <label htmlFor="password" className="label">
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                 Password
               </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                className="input rounded-b-md"
-                placeholder="Enter your password"
-                value={formData.password}
-                onChange={handleChange}
-              />
+              <div className="mt-1 relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <LockClosedIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                </div>
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  required
+                  className={`input pl-10 pr-10 ${fieldErrors.password ? 'border-red-500 focus:ring-red-500' : ''}`}
+                  placeholder="Enter your password"
+                  value={formData.password}
+                  onChange={handleChange}
+                />
+                <button
+                  type="button"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? (
+                    <EyeSlashIcon className="h-5 w-5 text-gray-400 hover:text-gray-500" aria-hidden="true" />
+                  ) : (
+                    <EyeIcon className="h-5 w-5 text-gray-400 hover:text-gray-500" aria-hidden="true" />
+                  )}
+                </button>
+              </div>
+              {fieldErrors.password && (
+                <p className="mt-2 text-sm text-red-600">{fieldErrors.password}</p>
+              )}
             </div>
           </div>
+
+          {isLocked ? (
+            <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
+              <div className="flex items-center">
+                <LockClosedIcon className="h-4 w-4 mr-2" />
+                <span>Account locked. Try again in {lockoutTime} seconds.</span>
+              </div>
+            </div>
+          ) : errorMessage ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {errorMessage}
+            </div>
+          ) : null}
 
           <div className="flex items-center justify-between">
             <div className="flex items-center">
@@ -120,7 +249,8 @@ const Login = () => {
             <div className="text-sm">
               <button
                 type="button"
-                className="font-medium text-primary-600 hover:text-primary-500"
+                onClick={handleForgotPassword}
+                className="font-medium text-blue-600 hover:text-blue-500"
               >
                 Forgot your password?
               </button>
@@ -130,28 +260,27 @@ const Login = () => {
           <div>
             <button
               type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={loading || isLocked}
+              className="btn btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
             >
               {loading ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                  Signing in...
+                </>
+              ) : isLocked ? (
+                <>
+                  <LockClosedIcon className="h-5 w-5 mr-2" />
+                  Account Locked
+                </>
               ) : (
                 'Sign in'
               )}
             </button>
           </div>
 
-          <div className="text-center text-sm">
-            <span className="text-gray-600">Don't have an account? </span>
-            <Link to="/register" className="font-medium text-primary-600 hover:text-primary-500">
-              Create new account
-            </Link>
-          </div>
-
-          <div className="text-center text-sm text-gray-600">
-            Demo credentials: `admin@example.com` or `admin` / `password123`
-          </div>
-        </motion.form>
+          
+                  </motion.form>
       </motion.div>
     </div>
   );

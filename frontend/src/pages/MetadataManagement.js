@@ -6,11 +6,15 @@ import {
   PencilIcon,
   TagIcon,
   TrashIcon,
+  SignalIcon,
 } from '@heroicons/react/24/outline';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import toast from 'react-hot-toast';
 import { metadataAPI } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
+import ProductSectionNav from '../components/ProductSectionNav';
+import useRealTimeInventory from '../hooks/useRealTimeInventory';
+import { useAuth } from '../hooks/useAuth';
 
 const defaultForm = {
   name: '',
@@ -54,16 +58,59 @@ const configMap = {
 };
 
 const MetadataManagement = ({ type, title }) => {
+  const { user } = useAuth();
   const config = configMap[type];
   const queryClient = useQueryClient();
+  const { isConnected, realTimeUpdates } = useRealTimeInventory();
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [formData, setFormData] = useState(defaultForm);
+  const canManageMetadata = ['admin', 'manager'].includes(user?.role);
 
-  const { data, isLoading } = useQuery(config.queryKey, config.get);
+  const { data, isLoading, isFetching } = useQuery(config.queryKey, config.get, {
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
+    keepPreviousData: true,
+  });
 
-  const items = useMemo(() => data?.data?.data?.[type] || [], [data, type]);
+  // Debug: Log data structure for units
+  console.log(`MetadataManagement - ${type} Data:`, data);
+  console.log(`MetadataManagement - ${type} Data Structure:`, {
+    'data?.data': data?.data,
+    'data?.data?.data': data?.data?.data,
+    'data?.data?.data?.[type]': data?.data?.data?.[type],
+    'items count': data?.data?.data?.[type]?.length || data?.data?.data?.length || data?.data?.length || 0
+  });
+
+  const items = useMemo(() => {
+    // Handle different data structures for different types
+    if (type === 'units') {
+      const unitsData = data?.data?.data || data?.data || [];
+      console.log(`MetadataManagement - Extracted ${type}:`, unitsData);
+      return unitsData;
+    }
+
+    const primaryItems = data?.data?.data?.[type];
+    if (Array.isArray(primaryItems)) {
+      return primaryItems;
+    }
+
+    const nestedItems = data?.data?.data?.categories;
+    if (type === 'categories' && Array.isArray(nestedItems)) {
+      return nestedItems;
+    }
+
+    if (Array.isArray(data?.data?.data)) {
+      return data.data.data;
+    }
+
+    if (Array.isArray(data?.data)) {
+      return data.data;
+    }
+
+    return [];
+  }, [data, type]);
 
   const filteredItems = useMemo(
     () =>
@@ -88,6 +135,10 @@ const MetadataManagement = ({ type, title }) => {
       onSuccess: () => {
         toast.success(`${title} ${editingItem ? 'updated' : 'added'} successfully`);
         queryClient.invalidateQueries(config.queryKey);
+        if (type === 'categories') {
+          queryClient.invalidateQueries('product-tool-categories');
+          queryClient.invalidateQueries('inventory');
+        }
         resetForm();
       },
       onError: (error) => toast.error(error.response?.data?.message || `Failed to save ${title}`),
@@ -98,17 +149,29 @@ const MetadataManagement = ({ type, title }) => {
     onSuccess: () => {
       toast.success(`${title} deleted successfully`);
       queryClient.invalidateQueries(config.queryKey);
+      if (type === 'categories') {
+        queryClient.invalidateQueries('product-tool-categories');
+        queryClient.invalidateQueries('inventory');
+      }
     },
     onError: (error) => toast.error(error.response?.data?.message || `Failed to delete ${title}`),
   });
 
   const openCreate = () => {
+    if (!canManageMetadata) {
+      toast.error('You do not have permission to manage product metadata');
+      return;
+    }
     setEditingItem(null);
     setFormData(defaultForm);
     setShowForm(true);
   };
 
   const openEdit = (item) => {
+    if (!canManageMetadata) {
+      toast.error('You do not have permission to manage product metadata');
+      return;
+    }
     setEditingItem(item);
     setFormData({
       name: item.name || '',
@@ -133,31 +196,49 @@ const MetadataManagement = ({ type, title }) => {
 
   return (
     <div className="space-y-6">
+      <ProductSectionNav />
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
           <p className="text-gray-600">Manage {title.toLowerCase()} used across products.</p>
         </div>
-        <button onClick={openCreate} className="btn btn-primary flex items-center">
-          <PlusIcon className="h-5 w-5 mr-2" /> Add {title}
-        </button>
+        <div className="flex items-center gap-3">
+          <div className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${isFetching ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+            <SignalIcon className="mr-2 h-4 w-4" />
+            {isFetching ? 'Refreshing live data' : 'Connected to dataset'}
+          </div>
+          {canManageMetadata ? (
+            <button onClick={openCreate} className="btn btn-primary flex items-center">
+              <PlusIcon className="h-5 w-5 mr-2" /> Add {title}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="rounded-2xl border border-gray-200 bg-white p-4">
-        <div className="relative max-w-md">
-          <MagnifyingGlassIcon className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            className="input pl-10"
-            placeholder={`Search ${title.toLowerCase()}...`}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="relative max-w-md flex-1">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              className="input pl-10"
+              placeholder={`Search ${title.toLowerCase()}...`}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            <span className="font-semibold">{filteredItems.length}</span> {title.toLowerCase()} in the live dataset
+          </div>
         </div>
       </div>
 
       {isLoading ? (
         <LoadingSpinner size="large" />
+      ) : filteredItems.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center text-gray-500">
+          No {title.toLowerCase()} found yet. Add your first one to start organizing product data.
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {filteredItems.map((item) => (
@@ -184,21 +265,23 @@ const MetadataManagement = ({ type, title }) => {
                 {item.duration ? <p>Duration: {item.duration} {item.duration_type}</p> : null}
               </div>
 
-              <div className="mt-5 flex gap-2">
-                <button onClick={() => openEdit(item)} className="btn btn-secondary flex-1 flex items-center justify-center">
-                  <PencilIcon className="h-4 w-4 mr-2" /> Edit
-                </button>
-                <button
-                  onClick={() => {
-                    if (window.confirm(`Delete ${item.name}?`)) {
-                      deleteMutation.mutate(item._id);
-                    }
-                  }}
-                  className="btn flex-1 flex items-center justify-center bg-red-50 text-red-700 hover:bg-red-100"
-                >
-                  <TrashIcon className="h-4 w-4 mr-2" /> Delete
-                </button>
-              </div>
+              {canManageMetadata ? (
+                <div className="mt-5 flex gap-2">
+                  <button onClick={() => openEdit(item)} className="btn btn-secondary flex-1 flex items-center justify-center">
+                    <PencilIcon className="h-4 w-4 mr-2" /> Edit
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`Delete ${item.name}?`)) {
+                        deleteMutation.mutate(item._id);
+                      }
+                    }}
+                    className="btn flex-1 flex items-center justify-center bg-red-50 text-red-700 hover:bg-red-100"
+                  >
+                    <TrashIcon className="h-4 w-4 mr-2" /> Delete
+                  </button>
+                </div>
+              ) : null}
             </motion.div>
           ))}
         </div>
@@ -312,6 +395,36 @@ const MetadataManagement = ({ type, title }) => {
           </motion.div>
         </div>
       )}
+
+      {/* Recent Product Updates Section */}
+      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Recent Product Updates</h3>
+            <p className="mt-1 text-sm text-gray-500">Latest realtime payloads received by the inventory listener.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
+            <span className="text-xs text-gray-500">
+              {isConnected ? 'Real-time Active' : 'Offline'}
+            </span>
+          </div>
+        </div>
+        <div className="mt-4 space-y-3">
+          {realTimeUpdates.length > 0 ? (
+            realTimeUpdates.slice(0, 5).map((item, index) => (
+              <div key={`${item._id || item.id || index}-${index}`} className="rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                <span className="font-semibold text-gray-900">{item.name || item.productName || 'Product update'}</span>
+                <span className="ml-2 text-gray-500">
+                  quantity {item.quantity ?? item.currentStock ?? 'n/a'}
+                </span>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-gray-500">No realtime product events have arrived yet. The workspace is still connected and polling live data.</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 };

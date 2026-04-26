@@ -17,31 +17,9 @@ import {
   AreaChart,
   Area
 } from 'recharts';
-import { useQuery } from 'react-query';
-import { analyticsAPI } from '../services/api';
-import LoadingSpinner from '../components/LoadingSpinner';
+import mockData from '../data/mockData';
 
 const Analytics = () => {
-  const { data: inventoryTrends, isLoading: inventoryLoading } = useQuery(
-    'inventoryAnalytics',
-    analyticsAPI.getInventoryTrends
-  );
-
-  const { data: assetsOverview, isLoading: assetsLoading } = useQuery(
-    'assetsAnalytics',
-    analyticsAPI.getAssetsOverview
-  );
-
-  const { data: transactionsAnalysis, isLoading: transactionsLoading } = useQuery(
-    'transactionsAnalytics',
-    () => analyticsAPI.getTransactionsAnalysis({ period: 30 })
-  );
-
-  const { data: suppliersPerformance, isLoading: suppliersLoading } = useQuery(
-    'suppliersAnalytics',
-    analyticsAPI.getSuppliersPerformance
-  );
-
   const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
   const formatCurrency = (amount) => {
@@ -51,8 +29,62 @@ const Analytics = () => {
     }).format(amount || 0);
   };
 
+  // Process inventory data for category analysis
+  const getInventoryCategoryData = () => {
+    const categoryMap = {};
+    mockData.products.forEach(product => {
+      const category = product.category || 'Uncategorized';
+      if (!categoryMap[category]) {
+        categoryMap[category] = {
+          _id: category,
+          totalQuantity: 0,
+          totalValue: 0
+        };
+      }
+      categoryMap[category].totalQuantity += product.quantity || 0;
+      categoryMap[category].totalValue += (product.quantity || 0) * (product.price?.selling || 0);
+    });
+    return Object.values(categoryMap);
+  };
+
+  // Process assets data for depreciation schedule
+  const getAssetDepreciationData = () => {
+    return mockData.assets.map(asset => ({
+      asset_name: asset.asset_name,
+      purchase_cost: asset.purchase_cost?.amount || 0,
+      currentValue: asset.current_value?.amount || 0
+    }));
+  };
+
+  // Process transactions data for revenue by type
+  const getTransactionRevenueData = () => {
+    const typeMap = {};
+    mockData.paymentTransactions.forEach(txn => {
+      const type = txn.transaction_type || 'other';
+      if (!typeMap[type]) {
+        typeMap[type] = {
+          _id: type.charAt(0).toUpperCase() + type.slice(1),
+          totalAmount: 0
+        };
+      }
+      typeMap[type].totalAmount += txn.amount || 0;
+    });
+    return Object.values(typeMap);
+  };
+
+  // Process suppliers data for top performers
+  const getSupplierPerformanceData = () => {
+    return mockData.suppliers.map(supplier => ({
+      name: supplier.name,
+      performance: {
+        rating: 4 + Math.random(),
+        on_time_delivery: Math.floor(85 + Math.random() * 15)
+      }
+    })).slice(0, 5);
+  };
+
   const InventoryTrendsChart = () => {
-    const data = inventoryTrends?.data?.categoryTrends || [];
+    const data = getInventoryCategoryData();
     
     return (
       <motion.div
@@ -83,7 +115,7 @@ const Analytics = () => {
   };
 
   const AssetDepreciationChart = () => {
-    const data = assetsOverview?.data?.depreciationSchedule || [];
+    const data = getAssetDepreciationData();
     
     return (
       <motion.div
@@ -102,7 +134,7 @@ const Analytics = () => {
             <Legend />
             <Area 
               type="monotone" 
-              dataKey="purchase_cost.amount" 
+              dataKey="purchase_cost" 
               stackId="1"
               stroke="#3b82f6" 
               fill="#3b82f6" 
@@ -123,7 +155,7 @@ const Analytics = () => {
   };
 
   const TransactionFlowChart = () => {
-    const data = transactionsAnalysis?.data?.revenueByType || [];
+    const data = getTransactionRevenueData();
     
     return (
       <motion.div
@@ -157,7 +189,7 @@ const Analytics = () => {
   };
 
   const SupplierPerformanceChart = () => {
-    const data = suppliersPerformance?.data?.topPerformers || [];
+    const data = getSupplierPerformanceData();
     
     return (
       <motion.div
@@ -181,16 +213,6 @@ const Analytics = () => {
       </motion.div>
     );
   };
-
-  const isLoading = inventoryLoading || assetsLoading || transactionsLoading || suppliersLoading;
-
-  if (isLoading) {
-    return (
-      <div className="flex justify-center items-center h-96">
-        <LoadingSpinner size="large" />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">

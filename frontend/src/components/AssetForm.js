@@ -41,8 +41,7 @@ const AssetForm = ({ asset, onClose, onSuccess }) => {
     },
   });
 
-  const queryClient = useQueryClient();
-  const isEditing = !!asset;
+    const isEditing = !!asset;
 
   const createMutation = useMutation(assetsAPI.create, {
     onSuccess: () => {

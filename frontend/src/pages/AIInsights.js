@@ -1,8 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   ChartBarIcon,
   ArrowPathIcon,
   CubeIcon,
+  BoltIcon,
   CurrencyDollarIcon,
   ReceiptRefundIcon,
   ShieldCheckIcon,
@@ -27,6 +29,7 @@ import {
 } from './ai/LiveAIViews';
 
 const tabs = [
+  { id: 'live-views', label: 'Live Views', icon: BoltIcon, component: null },
   { id: 'demand-forecasting', label: 'Demand Forecasting', icon: ChartBarIcon, component: DemandForecastingView },
   { id: 'smart-reorder', label: 'Smart Reorder', icon: ArrowPathIcon, component: SmartReorderView },
   { id: 'inventory-optimization', label: 'Inventory Optimization', icon: CubeIcon, component: InventoryOptimizationView },
@@ -40,11 +43,61 @@ const tabs = [
   { id: 'ai-assistant', label: 'AI Assistant', icon: ChatBubbleLeftRightIcon, component: AIAssistantView },
 ];
 
+const tabPath = (tabId) => (tabId === 'live-views' ? '/ai-insights/live-views' : `/ai-insights/${tabId}`);
+
+const LiveViewsOverview = () => {
+  const liveTabs = tabs.filter((tab) => tab.id !== 'live-views');
+
+  return (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {liveTabs.map((tab) => {
+        const Icon = tab.icon;
+        return (
+          <Link
+            key={tab.id}
+            to={tabPath(tab.id)}
+            className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="inline-flex rounded-full bg-blue-50 p-3 text-blue-700">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <h2 className="mt-4 text-lg font-semibold text-gray-900">{tab.label}</h2>
+                <p className="mt-2 text-sm text-gray-600">
+                  Open the live {tab.label.toLowerCase()} workspace with current system data.
+                </p>
+              </div>
+              <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
+                Live
+              </span>
+            </div>
+          </Link>
+        );
+      })}
+    </div>
+  );
+};
+
 const AIInsights = () => {
-  const [activeTab, setActiveTab] = useState('demand-forecasting');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('live-views');
+
+  useEffect(() => {
+    const routeTab = location.pathname.split('/')[2];
+    if (!routeTab) {
+      setActiveTab('live-views');
+      return;
+    }
+
+    if (tabs.some((tab) => tab.id === routeTab)) {
+      setActiveTab(routeTab);
+    }
+  }, [location.pathname]);
 
   const ActiveView = useMemo(() => {
-    return tabs.find((tab) => tab.id === activeTab)?.component || DemandForecastingView;
+    return tabs.find((tab) => tab.id === activeTab)?.component || LiveViewsOverview;
   }, [activeTab]);
 
   return (
@@ -65,7 +118,10 @@ const AIInsights = () => {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  navigate(tabPath(tab.id));
+                }}
                 className={`inline-flex items-center rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
                   isActive
                     ? 'border-blue-200 bg-blue-50 text-blue-700'

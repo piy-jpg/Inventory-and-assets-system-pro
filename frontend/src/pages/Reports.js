@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
@@ -15,7 +15,8 @@ import {
   DocumentTextIcon,
   CalendarIcon,
   ArrowDownTrayIcon,
-  ArrowUpTrayIcon
+  ArrowUpTrayIcon,
+  SignalIcon
 } from '@heroicons/react/24/outline';
 
 const Reports = () => {
@@ -55,16 +56,31 @@ const Reports = () => {
       ]
     },
     {
-      name: 'Purchase Reports',
-      description: 'Purchase history and supplier analysis',
+      name: 'Customer Reports',
+      description: 'Customer analytics and performance metrics',
+      icon: UserGroupIcon,
+      color: 'cyan',
+      href: '/reports/customers',
+      reports: [
+        'Customer Overview',
+        'Top Customers',
+        'Due Payments',
+        'Customer Ledger',
+        'Customer Analytics'
+      ]
+    },
+    {
+      name: 'Supplier Reports',
+      description: 'Supplier analytics and performance metrics',
       icon: TruckIcon,
       color: 'purple',
-      href: '/reports/purchases',
+      href: '/reports/suppliers',
       reports: [
+        'Supplier Overview',
+        'Top Suppliers',
+        'Pending Payments',
         'Purchase History',
-        'Supplier-wise Purchases',
-        'Pending Orders',
-        'Purchase Returns'
+        'Supplier Performance'
       ]
     },
     {
@@ -111,9 +127,11 @@ const Reports = () => {
       color: 'cyan',
       href: '/reports/user-activity',
       reports: [
+        'User Overview',
+        'Active Users',
         'Login History',
-        'Actions Performed',
-        'Audit Logs'
+        'Audit Logs',
+        'Role Distribution'
       ],
       adminOnly: true
     },
@@ -175,9 +193,12 @@ const Reports = () => {
   };
 
   const { user } = useAuth();
+  const visibleCategories = useMemo(
+    () => reportCategories.filter((category) => !category.adminOnly || user?.role === 'admin'),
+    [user?.role]
+  );
 
   const handleExportAll = () => {
-    const visibleCategories = reportCategories.filter((category) => !category.adminOnly || user?.role === 'admin');
     const rows = [
       ['Report Category', 'Description', 'Route', 'Available Reports', 'Start Date', 'End Date', 'Format'],
       ...visibleCategories.map((category) => ([
@@ -220,6 +241,10 @@ const Reports = () => {
         <div>
           <h1 className="page-title">Reports</h1>
           <p className="page-subtitle">Comprehensive reports and analytics for your inventory system</p>
+        </div>
+        <div className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700">
+          <SignalIcon className="mr-2 h-4 w-4" />
+          Live reporting active
         </div>
       </motion.div>
 
@@ -275,9 +300,7 @@ const Reports = () => {
 
       {/* Report Categories Grid */}
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-        {reportCategories
-          .filter(category => !category.adminOnly || user?.role === 'admin')
-          .map((category, index) => (
+        {visibleCategories.map((category, index) => (
             <motion.div
               key={category.name}
               initial={{ opacity: 0, y: 20 }}
@@ -335,53 +358,6 @@ const Reports = () => {
           ))}
       </div>
 
-      {/* Quick Stats */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.8 }}
-        className="grid grid-cols-1 gap-4 md:grid-cols-4"
-      >
-        <div className="section-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Reports</p>
-              <p className="text-2xl font-bold text-gray-900">9</p>
-            </div>
-            <ChartBarIcon className="h-8 w-8 text-blue-500" />
-          </div>
-        </div>
-        
-        <div className="section-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Report Types</p>
-              <p className="text-2xl font-bold text-gray-900">35+</p>
-            </div>
-            <DocumentTextIcon className="h-8 w-8 text-green-500" />
-          </div>
-        </div>
-        
-        <div className="section-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Export Formats</p>
-              <p className="text-2xl font-bold text-gray-900">3</p>
-            </div>
-            <ArrowDownTrayIcon className="h-8 w-8 text-purple-500" />
-          </div>
-        </div>
-        
-        <div className="section-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Date Range</p>
-              <p className="text-2xl font-bold text-gray-900">Custom</p>
-            </div>
-            <CalendarIcon className="h-8 w-8 text-orange-500" />
-          </div>
-        </div>
-      </motion.div>
     </div>
   );
 };

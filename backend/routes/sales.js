@@ -133,6 +133,31 @@ router.post('/', authMiddleware, async (req, res, next) => {
       });
     }
 
+    const io = req.app.get('io');
+    io.emit('transaction-created', {
+      type: 'sale',
+      data: {
+        sale,
+        transaction,
+      },
+    });
+    io.emit('inventory-updated', {
+      type: 'sale',
+      data: {
+        saleId: sale._id,
+        productIds: sale.items.map((item) => item.product),
+      },
+    });
+    if (resolvedCustomerId) {
+      io.emit('customer-updated', {
+        type: 'sale-linked',
+        data: {
+          customerId: resolvedCustomerId,
+          saleId: sale._id,
+        },
+      });
+    }
+
     res.status(201).json({ success: true, data: { sale } });
   } catch (error) {
     next(error);

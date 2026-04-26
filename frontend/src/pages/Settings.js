@@ -1,26 +1,20 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useMutation, useQueryClient } from 'react-query';
 import { authAPI, demoAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import ProfilePhotoUpload from '../components/ProfilePhotoUpload';
+import RoleManagement from './settings/RoleManagement';
 import { 
   UserIcon, 
-  LockClosedIcon, 
   BellIcon, 
-  BuildingStorefrontIcon,
-  ArrowPathIcon,
-  CircleStackIcon
+  ShieldCheckIcon
 } from '@heroicons/react/24/outline';
 
-const Settings = () => {
+const Settings = ({ initialTab = 'profile' }) => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState('profile');
-  const [formData, setFormData] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: '',
-  });
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   const [systemSettings, setSystemSettings] = useState({
     companyName: 'Smart Inventory Ltd',
@@ -30,30 +24,12 @@ const Settings = () => {
     lowStockAlerts: true,
   });
 
-  const [loading, setLoading] = useState(false);
   const [demoSummary, setDemoSummary] = useState(null);
 
-  const handlePasswordChange = async (e) => {
-    e.preventDefault();
-    if (formData.newPassword !== formData.confirmPassword) {
-      toast.error('Passwords do not match');
-      return;
-    }
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
-    setLoading(true);
-    try {
-      await authAPI.changePassword({
-        currentPassword: formData.currentPassword,
-        newPassword: formData.newPassword,
-      });
-      toast.success('Password changed successfully');
-      setFormData({ currentPassword: '', newPassword: '', confirmPassword: '' });
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to change password');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const demoMutation = useMutation(
     () => demoAPI.seedGroceryStoreMonth({ replaceExisting: true }),
@@ -71,23 +47,33 @@ const Settings = () => {
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: UserIcon },
-    { id: 'security', label: 'Security', icon: LockClosedIcon },
     { id: 'notifications', label: 'Notifications', icon: BellIcon },
-    { id: 'system', label: 'System Settings', icon: BuildingStorefrontIcon },
+    { id: 'roles', label: 'Role Management', icon: ShieldCheckIcon },
   ];
 
   const renderTabContent = () => {
     switch (activeTab) {
       case 'profile':
         return (
-          <div className="section-card space-y-5">
-            <div className="flex items-center space-x-4">
-              <div className="h-20 w-20 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 text-3xl font-bold">
-                {user?.firstName?.[0]}{user?.lastName?.[0]}
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-gray-900">{user?.firstName} {user?.lastName}</h3>
-                <p className="text-gray-500">{user?.role.toUpperCase()} • {user?.department}</p>
+          <div className="section-card space-y-6">
+            <ProfilePhotoUpload 
+              currentPhoto={user?.profilePhoto}
+              onPhotoUpdate={(newPhoto) => {
+                // Update user profile photo in auth context
+                queryClient.invalidateQueries('user');
+              }}
+              userId={user?.user_id}
+            />
+            
+            <div className="border-t pt-6">
+              <div className="flex items-center space-x-4">
+                <div className="h-16 w-16 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 text-2xl font-bold">
+                  {user?.firstName?.[0]}{user?.lastName?.[0]}
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">{user?.firstName} {user?.lastName}</h3>
+                  <p className="text-gray-500">{user?.role?.toUpperCase()} · {user?.department || 'Not specified'}</p>
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -102,90 +88,38 @@ const Settings = () => {
             </div>
           </div>
         );
-      case 'security':
+      case 'notifications':
         return (
-          <form onSubmit={handlePasswordChange} className="section-card space-y-5">
-            <h3 className="text-lg font-bold text-gray-900">Change Password</h3>
+          <div className="section-card space-y-5">
+            <h3 className="text-lg font-bold text-gray-900">Notification Preferences</h3>
             <div className="space-y-4">
-              <div>
-                <label className="label">Current Password</label>
-                <input type="password" name="currentPassword" required className="input" value={formData.currentPassword} onChange={(e) => setFormData({...formData, currentPassword: e.target.value})} />
-              </div>
-              <div>
-                <label className="label">New Password</label>
-                <input type="password" name="newPassword" required className="input" value={formData.newPassword} onChange={(e) => setFormData({...formData, newPassword: e.target.value})} />
-              </div>
-              <div>
-                <label className="label">Confirm New Password</label>
-                <input type="password" name="confirmPassword" required className="input" value={formData.confirmPassword} onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})} />
-              </div>
-            </div>
-            <button type="submit" disabled={loading} className="btn btn-primary">
-              {loading ? 'Changing...' : 'Update Password'}
-            </button>
-          </form>
-        );
-      case 'system':
-        return (
-          <div className="space-y-5">
-            <div className="section-card space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="label">Company Name</label>
-                <input type="text" className="input" value={systemSettings.companyName} onChange={(e) => setSystemSettings({...systemSettings, companyName: e.target.value})} />
-              </div>
-              <div>
-                <label className="label">Currency</label>
-                <select className="input" value={systemSettings.currency} onChange={(e) => setSystemSettings({...systemSettings, currency: e.target.value})}>
-                  <option value="USD">USD - US Dollar</option>
-                  <option value="EUR">EUR - Euro</option>
-                  <option value="GBP">GBP - British Pound</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-              <div>
-                <h4 className="font-bold text-gray-900">Automatic Backup</h4>
-                <p className="text-sm text-gray-500">Run database backup every 24 hours</p>
-              </div>
-              <div className="h-6 w-11 bg-primary-600 rounded-full relative">
-                <div className="absolute right-1 top-1 h-4 w-4 bg-white rounded-full"></div>
-              </div>
-            </div>
-            </div>
-
-            <div className="section-card space-y-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <label className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900">Grocery Demo Dataset</h3>
-                  <p className="text-sm text-gray-600">
-                    Load a connected 30-day grocery store workflow with products, suppliers, customers, purchases, sales, expenses, assets, alerts, and payment accounts.
-                  </p>
+                  <p className="font-medium text-gray-900">Email Notifications</p>
+                  <p className="text-sm text-gray-500">Receive workflow and approval updates by email.</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => demoMutation.mutate()}
-                  disabled={demoMutation.isLoading}
-                  className="btn btn-primary"
-                >
-                  {demoMutation.isLoading ? <ArrowPathIcon className="h-4 w-4 animate-spin" /> : <CircleStackIcon className="h-4 w-4" />}
-                  {demoMutation.isLoading ? 'Loading Dataset...' : 'Load Grocery Month'}
-                </button>
-              </div>
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                This replaces existing demo/business records in inventory, sales, purchases, expenses, alerts, assets, warehouses, payment accounts, and metadata.
-              </div>
-              {demoSummary ? (
-                <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
-                  <div className="rounded-lg bg-gray-50 px-3 py-3"><span className="block text-gray-500">Inventory</span><span className="font-semibold text-gray-900">{demoSummary.inventoryItems}</span></div>
-                  <div className="rounded-lg bg-gray-50 px-3 py-3"><span className="block text-gray-500">Sales</span><span className="font-semibold text-gray-900">{demoSummary.sales}</span></div>
-                  <div className="rounded-lg bg-gray-50 px-3 py-3"><span className="block text-gray-500">Purchases</span><span className="font-semibold text-gray-900">{demoSummary.purchases}</span></div>
-                  <div className="rounded-lg bg-gray-50 px-3 py-3"><span className="block text-gray-500">Alerts</span><span className="font-semibold text-gray-900">{demoSummary.activeAlerts}</span></div>
+                <input
+                  type="checkbox"
+                  checked={systemSettings.emailNotifications}
+                  onChange={(e) => setSystemSettings((prev) => ({ ...prev, emailNotifications: e.target.checked }))}
+                />
+              </label>
+              <label className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+                <div>
+                  <p className="font-medium text-gray-900">Low Stock Alerts</p>
+                  <p className="text-sm text-gray-500">Show live stock warnings across inventory and dashboard.</p>
                 </div>
-              ) : null}
+                <input
+                  type="checkbox"
+                  checked={systemSettings.lowStockAlerts}
+                  onChange={(e) => setSystemSettings((prev) => ({ ...prev, lowStockAlerts: e.target.checked }))}
+                />
+              </label>
             </div>
           </div>
         );
+      case 'roles':
+        return <RoleManagement />;
       default:
         return <div className="p-8 text-center text-gray-500">Coming soon...</div>;
     }

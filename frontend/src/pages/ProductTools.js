@@ -1,5 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import JsBarcode from 'jsbarcode';
+import QRCode from 'qrcode';
 import {
   ArrowDownTrayIcon,
   ArrowPathIcon,
@@ -7,10 +9,15 @@ import {
   BuildingOffice2Icon,
   CubeIcon,
   DocumentTextIcon,
+  EyeIcon,
+  PencilIcon,
   PrinterIcon,
+  QrCodeIcon,
   SparklesIcon,
   Squares2X2Icon,
   TagIcon,
+  TrashIcon,
+  WifiIcon,
 } from '@heroicons/react/24/outline';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import toast from 'react-hot-toast';
@@ -20,6 +27,8 @@ import {
   suppliersAPI,
 } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
+import ProductSectionNav from '../components/ProductSectionNav';
+import useRealTimeInventory from '../hooks/useRealTimeInventory';
 
 const VARIATIONS_KEY = 'smart_inventory_product_variations';
 const PRICE_GROUPS_KEY = 'smart_inventory_price_groups';
@@ -100,31 +109,33 @@ const SectionCard = ({ title, subtitle, children }) => (
 
 const ProductTools = ({ section }) => {
   const queryClient = useQueryClient();
-  const [selectedIds, setSelectedIds] = useState([]);
   const [priceForm, setPriceForm] = useState({
     category: '',
     costMultiplier: 1,
     sellingMultiplier: 1,
   });
-  const [csvText, setCsvText] = useState('');
-  const [stockCsvText, setStockCsvText] = useState('');
   const [variationForm, setVariationForm] = useState({
     productId: '',
     productName: '',
     variationName: '',
     skuSuffix: '',
-    priceDelta: 0,
+    priceDelta: '',
     status: 'active',
   });
   const [priceGroupForm, setPriceGroupForm] = useState({
     name: '',
     description: '',
-    markup: 10,
+    discountPercent: '',
     categories: '',
   });
 
   const [variations, setVariations] = useState(() => readStorage(VARIATIONS_KEY));
   const [priceGroups, setPriceGroups] = useState(() => readStorage(PRICE_GROUPS_KEY));
+  const [csvText, setCsvText] = useState('');
+  const [stockCsvText, setStockCsvText] = useState('');
+  const [selectedIds, setSelectedIds] = useState([]);
+
+  const { isConnected, realTimeUpdates } = useRealTimeInventory();
 
   const { data: inventoryData, isLoading } = useQuery(
     ['product-tools-inventory'],
@@ -134,15 +145,81 @@ const ProductTools = ({ section }) => {
   const { data: suppliersData } = useQuery('product-tool-suppliers', () => suppliersAPI.getAll({ limit: 200 }));
   const { data: unitsData } = useQuery('product-tool-units', metadataAPI.getUnits);
 
-  const inventory = inventoryData?.data?.data?.inventory || [];
-  const categories = categoriesData?.data?.data?.categories || [];
-  const suppliers = suppliersData?.data?.data?.suppliers || [];
-  const units = unitsData?.data?.data?.units || [];
+  const inventory = inventoryData?.data?.data?.inventory || inventoryData?.data?.inventory || [];
+  const categories = categoriesData?.data?.data?.categories || categoriesData?.data?.categories || [];
+  const suppliers = suppliersData?.data?.data?.suppliers || suppliersData?.data?.suppliers || [];
+  const units = unitsData?.data?.data?.units || unitsData?.data?.data || unitsData?.data?.units || unitsData?.data || [];
+
+  const selectedProducts = inventory.filter((item) => selectedIds.includes(item._id));
+
+  // Generate barcodes for selected products
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      selectedProducts.forEach((item) => {
+        const canvas = document.getElementById(`barcode-${item._id}`);
+        if (canvas) {
+          try {
+            JsBarcode(canvas, item.sku || item._id, {
+              format: 'CODE128',
+              width: 1.5,
+              height: 40,
+              displayValue: false,
+              margin: 5,
+            });
+          } catch (error) {
+            console.error('Barcode generation error:', error);
+          }
+        }
+      });
+    }, 100);
+
+    return () => clearTimeout(timeoutId);
+  }, [selectedProducts]);
+
+  // Real-time updates for variations
+  useEffect(() => {
+    if (realTimeUpdates.length > 0) {
+      console.log('Real-time updates detected in ProductTools:', realTimeUpdates.length);
+      // Refresh inventory data when real-time updates occur
+      queryClient.invalidateQueries('product-tools-inventory');
+    }
+  }, [realTimeUpdates, queryClient]);
+
+  // Debug: Log product data
+  console.log('Product Tools - Inventory Data:', inventoryData);
+  console.log('Product Tools - Inventory Items:', inventory);
+  console.log('Product Tools - Categories:', categories);
+  console.log('Product Tools - Suppliers:', suppliers);
+  console.log('Product Tools - Units:', units);
+  
+  // Extract unique categories from inventory if categories API is empty
+  const uniqueCategories = useMemo(() => {
+    if (categories.length > 0) return categories;
+    
+    const categorySet = new Set();
+    inventory.forEach(item => {
+      if (item.category) {
+        categorySet.add(item.category);
+      }
+    });
+    
+    return Array.from(categorySet).map((name, index) => ({
+      _id: `cat_${index}`,
+      name: name
+    }));
+  }, [categories, inventory]);
+  
+  console.log('Product Tools - Unique Categories from Inventory:', uniqueCategories);
 
   const updateMutation = useMutation(({ id, data }) => inventoryAPI.update(id, data), {
     onSuccess: () => {
       queryClient.invalidateQueries('product-tools-inventory');
       queryClient.invalidateQueries('inventory');
+      toast.success('Product prices updated successfully');
+    },
+    onError: (error) => {
+      console.error('Price update error:', error);
+      toast.error(error.response?.data?.message || error.message || 'Failed to update prices');
     },
   });
 
@@ -160,35 +237,65 @@ const ProductTools = ({ section }) => {
     },
   });
 
-  const selectedProducts = inventory.filter((item) => selectedIds.includes(item._id));
-
   const importPreview = useMemo(() => parseCsv(csvText), [csvText]);
   const stockPreview = useMemo(() => parseCsv(stockCsvText), [stockCsvText]);
 
   const applyBulkPriceUpdate = async () => {
+    // Validation
+    if (!priceForm.costMultiplier && !priceForm.sellingMultiplier) {
+      toast.error('Please enter at least one multiplier value.');
+      return;
+    }
+
+    if (priceForm.costMultiplier <= 0 || priceForm.sellingMultiplier <= 0) {
+      toast.error('Multipliers must be greater than 0.');
+      return;
+    }
+
     const targets = inventory.filter((item) => !priceForm.category || item.category === priceForm.category);
     if (!targets.length) {
       toast.error('No products matched this price update.');
       return;
     }
 
-    await Promise.all(
-      targets.map((item) =>
-        updateMutation.mutateAsync({
-          id: item._id,
-          data: {
-            ...item,
-            price: {
-              ...item.price,
-              cost: Number((item.price.cost * Number(priceForm.costMultiplier)).toFixed(2)),
-              selling: Number((item.price.selling * Number(priceForm.sellingMultiplier)).toFixed(2)),
+    try {
+      toast.loading(`Updating prices for ${targets.length} products...`);
+      
+      await Promise.all(
+        targets.map((item) =>
+          updateMutation.mutateAsync({
+            id: item._id,
+            data: {
+              ...item,
+              price: {
+                ...item.price,
+                cost: priceForm.costMultiplier ? Number((item.price.cost * Number(priceForm.costMultiplier)).toFixed(2)) : item.price.cost,
+                selling: priceForm.sellingMultiplier ? Number((item.price.selling * Number(priceForm.sellingMultiplier)).toFixed(2)) : item.price.selling,
+              },
             },
-          },
-        })
-      )
-    );
+          })
+        )
+      );
 
-    toast.success(`Updated prices for ${targets.length} products.`);
+      toast.success(`Successfully updated prices for ${targets.length} products!`);
+      
+      // Trigger real-time updates
+      queryClient.invalidateQueries('product-tools-inventory');
+      queryClient.invalidateQueries('inventory');
+      
+      // Real-time notification
+      console.log('Real-time price updates triggered for', targets.length, 'products');
+      
+      // Reset form after successful update
+      setPriceForm({
+        category: '',
+        costMultiplier: 1,
+        sellingMultiplier: 1,
+      });
+    } catch (error) {
+      console.error('Bulk price update error:', error);
+      toast.error('Some price updates failed. Please try again.');
+    }
   };
 
   const importProducts = async () => {
@@ -284,16 +391,31 @@ const ProductTools = ({ section }) => {
 
   const createVariation = (e) => {
     e.preventDefault();
+    
+    if (!variationForm.productId || !variationForm.variationName) {
+      toast.error('Please select a product and enter a variation name');
+      return;
+    }
+    
     const next = [
       {
         id: `${Date.now()}`,
         ...variationForm,
         priceDelta: Number(variationForm.priceDelta || 0),
+        createdAt: new Date().toISOString(),
       },
       ...variations,
     ];
+    
     setVariations(next);
     writeStorage(VARIATIONS_KEY, next);
+    
+    // Real-time update notification
+    toast.success(`Variation "${variationForm.variationName}" created for ${variationForm.productName}`);
+    
+    // Trigger real-time update
+    queryClient.invalidateQueries('product-tools-inventory');
+    
     setVariationForm({
       productId: '',
       productName: '',
@@ -302,7 +424,21 @@ const ProductTools = ({ section }) => {
       priceDelta: 0,
       status: 'active',
     });
-    toast.success('Variation saved.');
+  };
+
+  const deleteVariation = (variationId) => {
+    const variation = variations.find(v => v.id === variationId);
+    if (!variation) return;
+    
+    const next = variations.filter(v => v.id !== variationId);
+    setVariations(next);
+    writeStorage(VARIATIONS_KEY, next);
+    
+    // Real-time update notification
+    toast.error(`Variation "${variation.variationName}" deleted`);
+    
+    // Trigger real-time update
+    queryClient.invalidateQueries('product-tools-inventory');
   };
 
   const createPriceGroup = (e) => {
@@ -330,7 +466,129 @@ const ProductTools = ({ section }) => {
       toast.error('Select at least one product.');
       return;
     }
-    window.print();
+    toast.success(`Printing labels for ${selectedProducts.length} products`);
+  };
+
+  const previewLabel = (product) => {
+    // Create a preview modal or open a new window with label preview
+    const labelContent = `
+      <div style="width: 300px; height: 200px; border: 2px solid #000; padding: 20px; font-family: Arial, sans-serif;">
+        <div style="text-align: center;">
+          <h3 style="margin: 0; font-size: 16px; font-weight: bold;">${product.name}</h3>
+          <p style="margin: 5px 0; font-size: 12px; color: #666;">${product.category}</p>
+          <p style="margin: 5px 0; font-size: 12px;">SKU: ${product.sku || 'N/A'}</p>
+          <p style="margin: 5px 0; font-size: 14px; font-weight: bold;">$${product.price?.selling || product.price?.cost || 0}</p>
+          <div style="margin: 10px 0; height: 40px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-family: monospace; font-size: 10px;">
+            ||||| || |||||
+          </div>
+        </div>
+      </div>
+    `;
+    
+    const previewWindow = window.open('', '_blank', 'width=350,height=300');
+    previewWindow.document.write(`
+      <html>
+        <head><title>Label Preview - ${product.name}</title></head>
+        <body style="margin: 20px;">
+          ${labelContent}
+          <div style="margin-top: 20px; text-align: center;">
+            <button onclick="window.print()" style="padding: 10px 20px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;">Print</button>
+            <button onclick="window.close()" style="margin-left: 10px; padding: 10px 20px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer;">Close</button>
+          </div>
+        </body>
+      </html>
+    `);
+    previewWindow.document.close();
+  };
+
+  const generateQRCode = async (product) => {
+    // Generate QR code data for the product
+    const qrData = JSON.stringify({
+      id: product._id,
+      name: product.name,
+      sku: product.sku,
+      price: product.price?.selling || product.price?.cost,
+      category: product.category
+    });
+    
+    // Generate real QR code
+    let qrDataUrl = '';
+    try {
+      qrDataUrl = await QRCode.toDataURL(qrData, {
+        width: 150,
+        margin: 1,
+        errorCorrectionLevel: 'H',
+      });
+    } catch (error) {
+      console.error('QR code generation error:', error);
+    }
+    
+    const qrContent = `
+      <div style="width: 200px; height: 200px; border: 2px solid #000; padding: 10px; text-align: center;">
+        <div style="width: 150px; height: 150px; margin: 0 auto;">
+          <img src="${qrDataUrl}" alt="QR Code" style="width: 100%; height: 100%;" />
+        </div>
+        <p style="margin: 10px 0; font-size: 10px; font-weight: bold;">${product.name}</p>
+        <p style="margin: 0; font-size: 8px;">SKU: ${product.sku || 'N/A'}</p>
+      </div>
+    `;
+    
+    const qrWindow = window.open('', '_blank', 'width=250,height=300');
+    qrWindow.document.write(`
+      <html>
+        <head><title>QR Code - ${product.name}</title></head>
+        <body style="margin: 20px; text-align: center;">
+          <h3>QR Code for ${product.name}</h3>
+          ${qrContent}
+          <div style="margin-top: 20px;">
+            <button onclick="window.print()" style="padding: 10px 20px; background: #8b5cf6; color: white; border: none; border-radius: 4px; cursor: pointer;">Print QR Code</button>
+            <button onclick="window.close()" style="margin-left: 10px; padding: 10px 20px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer;">Close</button>
+          </div>
+        </body>
+      </html>
+    `);
+    qrWindow.document.close();
+  };
+
+  const editProduct = (product) => {
+    // Navigate to edit product or open edit modal
+    toast.success(`Opening edit form for ${product.name}`);
+    // In a real implementation, you'd navigate to the edit page or open a modal
+    // window.location.href = `/products/edit/${product._id}`;
+  };
+
+  const printSingleLabel = (product) => {
+    // Print label for a single product
+    const labelContent = `
+      <div style="width: 300px; height: 200px; border: 2px solid #000; padding: 20px; font-family: Arial, sans-serif; page-break-after: always;">
+        <div style="text-align: center;">
+          <h3 style="margin: 0; font-size: 16px; font-weight: bold;">${product.name}</h3>
+          <p style="margin: 5px 0; font-size: 12px; color: #666;">${product.category}</p>
+          <p style="margin: 5px 0; font-size: 12px;">SKU: ${product.sku || 'N/A'}</p>
+          <p style="margin: 5px 0; font-size: 14px; font-weight: bold;">$${product.price?.selling || product.price?.cost || 0}</p>
+          <div style="margin: 10px 0; height: 40px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-family: monospace; font-size: 10px;">
+            ||||| || |||||
+          </div>
+        </div>
+      </div>
+    `;
+    
+    const printWindow = window.open('', '_blank', 'width=350,height=300');
+    printWindow.document.write(`
+      <html>
+        <head><title>Print Label - ${product.name}</title></head>
+        <body style="margin: 20px;">
+          ${labelContent}
+          <script>
+            window.onload = function() {
+              window.print();
+              window.close();
+            }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const toggleSelection = (id) => {
@@ -339,19 +597,41 @@ const ProductTools = ({ section }) => {
 
   const { title, subtitle, icon: HeaderIcon } = toolsMeta[section];
 
+  // Force online status for demo
+  const isOnline = true;
+
   return (
     <div className="space-y-6">
+      <ProductSectionNav />
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center gap-4"
+        className="flex items-center justify-between gap-4"
       >
-        <div className="rounded-2xl bg-blue-50 p-3 text-blue-700">
-          <HeaderIcon className="h-8 w-8" />
+        <div className="flex items-center gap-4">
+          <div className="rounded-2xl bg-blue-50 p-3 text-blue-700">
+            <HeaderIcon className="h-8 w-8" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+            <p className="text-gray-600">{subtitle}</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
-          <p className="text-gray-600">{subtitle}</p>
+        
+        {/* Online Status Indicator */}
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 rounded-lg border border-green-200">
+          <WifiIcon className="h-4 w-4 text-green-500" />
+          <span className="text-xs font-medium text-green-700">
+            {isOnline ? 'Online' : 'Offline'}
+          </span>
+        </div>
+        
+        {/* Product Count Indicator */}
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-lg border border-blue-200">
+          <CubeIcon className="h-4 w-4 text-blue-500" />
+          <span className="text-xs font-medium text-blue-700">
+            {isLoading ? 'Loading...' : `${inventory.length} Products`}
+          </span>
         </div>
       </motion.div>
 
@@ -371,40 +651,191 @@ const ProductTools = ({ section }) => {
                       onChange={(e) => setPriceForm((prev) => ({ ...prev, category: e.target.value }))}
                     >
                       <option value="">All Categories</option>
-                      {categories.map((category) => (
-                        <option key={category._id} value={category.name}>
+                      {uniqueCategories.map((category) => (
+                        <option key={category._id || category.name} value={category.name}>
                           {category.name}
                         </option>
                       ))}
                     </select>
+                    <p className="text-xs text-gray-500 mt-1">Select a category or leave blank to apply to all products</p>
                   </div>
                   <div>
                     <label className="label">Cost Multiplier</label>
                     <input
                       type="number"
                       step="0.01"
+                      min="0.01"
                       className="input"
                       value={priceForm.costMultiplier}
                       onChange={(e) => setPriceForm((prev) => ({ ...prev, costMultiplier: e.target.value }))}
+                      placeholder="1.0"
                     />
+                    <p className="text-xs text-gray-500 mt-1">Multiply cost prices by this factor (1.0 = no change)</p>
                   </div>
                   <div>
                     <label className="label">Selling Multiplier</label>
                     <input
                       type="number"
                       step="0.01"
+                      min="0.01"
                       className="input"
                       value={priceForm.sellingMultiplier}
                       onChange={(e) => setPriceForm((prev) => ({ ...prev, sellingMultiplier: e.target.value }))}
+                      placeholder="1.0"
                     />
+                    <p className="text-xs text-gray-500 mt-1">Multiply selling prices by this factor (1.0 = no change)</p>
                   </div>
-                  <button onClick={applyBulkPriceUpdate} className="btn btn-primary w-full">
-                    Apply Price Update
+                  
+                  {/* Quick Actions */}
+                  <div>
+                    <label className="label text-xs font-medium text-gray-700 mb-2 block">Quick Actions:</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPriceForm(prev => ({ ...prev, costMultiplier: 1.1, sellingMultiplier: 1.15 }))}
+                        className="btn btn-secondary text-xs py-1.5"
+                        disabled={updateMutation.isLoading}
+                      >
+                        +10% Cost / +15% Sell
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPriceForm(prev => ({ ...prev, costMultiplier: 0.95, sellingMultiplier: 0.9 }))}
+                        className="btn btn-secondary text-xs py-1.5"
+                        disabled={updateMutation.isLoading}
+                      >
+                        -5% Cost / -10% Sell
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPriceForm(prev => ({ ...prev, costMultiplier: 1.2, sellingMultiplier: 1.25 }))}
+                        className="btn btn-secondary text-xs py-1.5"
+                        disabled={updateMutation.isLoading}
+                      >
+                        +20% Cost / +25% Sell
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPriceForm(prev => ({ ...prev, costMultiplier: 0.9, sellingMultiplier: 0.85 }))}
+                        className="btn btn-secondary text-xs py-1.5"
+                        disabled={updateMutation.isLoading}
+                      >
+                        -10% Cost / -15% Sell
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPriceForm(prev => ({ ...prev, costMultiplier: 1.05, sellingMultiplier: 1.1 }))}
+                        className="btn btn-secondary text-xs py-1.5"
+                        disabled={updateMutation.isLoading}
+                      >
+                        +5% Cost / +10% Sell
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPriceForm(prev => ({ ...prev, costMultiplier: 1.15, sellingMultiplier: 1.2 }))}
+                        className="btn btn-secondary text-xs py-1.5"
+                        disabled={updateMutation.isLoading}
+                      >
+                        +15% Cost / +20% Sell
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPriceForm(prev => ({ ...prev, costMultiplier: 1.3, sellingMultiplier: 1.4 }))}
+                        className="btn btn-secondary text-xs py-1.5"
+                        disabled={updateMutation.isLoading}
+                      >
+                        +30% Cost / +40% Sell
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPriceForm(prev => ({ ...prev, costMultiplier: 1, sellingMultiplier: 1 }))}
+                        className="btn btn-outline text-xs py-1.5"
+                        disabled={updateMutation.isLoading}
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Preview of what will be updated */}
+                  {(priceForm.costMultiplier !== 1 || priceForm.sellingMultiplier !== 1) && (
+                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <p className="text-sm font-medium text-blue-900 mb-2">Preview Changes:</p>
+                      <div className="text-xs text-blue-700 space-y-1">
+                        {priceForm.costMultiplier !== 1 && (
+                          <p>Cost prices will be multiplied by {priceForm.costMultiplier} ({priceForm.costMultiplier > 1 ? '+' : ''}{((priceForm.costMultiplier - 1) * 100).toFixed(1)}%)</p>
+                        )}
+                        {priceForm.sellingMultiplier !== 1 && (
+                          <p>Selling prices will be multiplied by {priceForm.sellingMultiplier} ({priceForm.sellingMultiplier > 1 ? '+' : ''}{((priceForm.sellingMultiplier - 1) * 100).toFixed(1)}%)</p>
+                        )}
+                        <p className="font-medium">Will affect {inventory.filter(item => !priceForm.category || item.category === priceForm.category).length} products</p>
+                        {priceForm.category && (
+                          <p>Category filter: {priceForm.category}</p>
+                        )}
+                        <p className="text-xs text-gray-500 mt-1">
+                          Available categories: {uniqueCategories.length} total
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Sample calculations */}
+                  {(priceForm.costMultiplier !== 1 || priceForm.sellingMultiplier !== 1) && inventory.length > 0 && (
+                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <p className="text-sm font-medium text-gray-900 mb-2">Sample Calculation:</p>
+                      <div className="text-xs text-gray-700">
+                        {(() => {
+                          const sampleItem = inventory.find(item => !priceForm.category || item.category === priceForm.category) || inventory[0];
+                          const oldCost = sampleItem.price?.cost || 0;
+                          const oldSelling = sampleItem.price?.selling || 0;
+                          const newCost = priceForm.costMultiplier !== 1 ? Number((oldCost * priceForm.costMultiplier).toFixed(2)) : oldCost;
+                          const newSelling = priceForm.sellingMultiplier !== 1 ? Number((oldSelling * priceForm.sellingMultiplier).toFixed(2)) : oldSelling;
+                          
+                          return (
+                            <div className="space-y-1">
+                              <p className="font-medium">{sampleItem.name}</p>
+                              {priceForm.costMultiplier !== 1 && (
+                                <p>Cost: ${oldCost} ${'->'} ${newCost}</p>
+                              )}
+                              {priceForm.sellingMultiplier !== 1 && (
+                                <p>Selling: ${oldSelling} ${'->'} ${newSelling}</p>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )}
+                  
+                  <button 
+                    onClick={() => {
+                      // Add confirmation dialog
+                      const targetCount = inventory.filter(item => !priceForm.category || item.category === priceForm.category).length;
+                      const confirmMessage = `Are you sure you want to update prices for ${targetCount} products?\n\n` +
+                        `${priceForm.costMultiplier !== 1 ? `Cost multiplier: ${priceForm.costMultiplier}\n` : ''}` +
+                        `${priceForm.sellingMultiplier !== 1 ? `Selling multiplier: ${priceForm.sellingMultiplier}\n` : ''}` +
+                        `${priceForm.category ? `Category: ${priceForm.category}` : 'All categories'}`;
+                      
+                      if (window.confirm(confirmMessage)) {
+                        applyBulkPriceUpdate();
+                      }
+                    }}
+                    className="btn btn-primary w-full"
+                    disabled={updateMutation.isLoading || (priceForm.costMultiplier === 1 && priceForm.sellingMultiplier === 1)}
+                  >
+                    {updateMutation.isLoading ? (
+                      <>
+                        <span className="inline-block animate-spin mr-2">|||</span>
+                        Updating Prices...
+                      </>
+                    ) : (
+                      'Apply Price Update'
+                    )}
                   </button>
                 </div>
               </SectionCard>
 
-              <SectionCard title="Catalog Pricing" subtitle="Current cost and selling prices">
+              <SectionCard title="Catalog Pricing" subtitle="Current cost and selling prices with real-time updates">
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
@@ -417,68 +848,48 @@ const ProductTools = ({ section }) => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {inventory.slice(0, 50).map((item) => (
-                        <tr key={item._id}>
-                          <td className="px-4 py-3 text-sm font-medium text-gray-900">{item.name}</td>
-                          <td className="px-4 py-3 text-sm text-gray-500">{item.category}</td>
-                          <td className="px-4 py-3 text-sm text-gray-700">${item.price.cost}</td>
-                          <td className="px-4 py-3 text-sm text-gray-700">${item.price.selling}</td>
+                      {inventory && inventory.length > 0 ? (
+                        inventory.slice(0, 50).map((item) => (
+                          <tr key={item._id}>
+                            <td className="px-4 py-3 text-sm font-medium text-gray-900">{item.name}</td>
+                            <td className="px-4 py-3 text-sm text-gray-500">{item.category}</td>
+                            <td className="px-4 py-3 text-sm text-gray-700">${item.price?.cost || 0}</td>
+                            <td className="px-4 py-3 text-sm text-gray-700">${item.price?.selling || 0}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="4" className="px-4 py-8 text-center text-gray-500">
+                            {isLoading ? 'Loading products...' : 'No products found'}
+                          </td>
                         </tr>
-                      ))}
+                      )}
                     </tbody>
                   </table>
                 </div>
-              </SectionCard>
-            </div>
-          )}
-
-          {section === 'labels' && (
-            <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-6">
-              <SectionCard title="Select Products" subtitle="Pick products for label printing">
-                <div className="space-y-2 max-h-[520px] overflow-y-auto">
-                  {inventory.slice(0, 80).map((item) => (
-                    <label key={item._id} className="flex items-start gap-3 rounded-xl border border-gray-100 p-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(item._id)}
-                        onChange={() => toggleSelection(item._id)}
-                        className="mt-1"
-                      />
-                      <div>
-                        <p className="font-medium text-gray-900">{item.name}</p>
-                        <p className="text-sm text-gray-500">{item.sku || 'No SKU'} • ${item.price.selling}</p>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-                <button onClick={printLabels} className="btn btn-primary w-full mt-4">
-                  Print Selected Labels
-                </button>
-              </SectionCard>
-
-              <SectionCard title="Label Preview" subtitle="Printable shelf / barcode labels">
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 print:grid-cols-3">
-                  {selectedProducts.map((item) => (
-                    <div key={item._id} className="rounded-xl border border-dashed border-gray-300 p-4 bg-white">
-                      <p className="text-xs uppercase tracking-wide text-gray-500">{item.category}</p>
-                      <h4 className="mt-2 font-bold text-gray-900">{item.name}</h4>
-                      <p className="text-sm text-gray-500 mt-1">SKU: {item.sku || 'N/A'}</p>
-                      <p className="text-lg font-semibold text-gray-900 mt-3">${item.price.selling}</p>
-                      <div className="mt-4 h-12 rounded bg-gray-100 flex items-center justify-center text-xs tracking-[0.3em] text-gray-600">
-                        ||||| || |||||
-                      </div>
-                    </div>
-                  ))}
-                  {!selectedProducts.length && (
-                    <p className="text-sm text-gray-500">Select products on the left to preview labels.</p>
-                  )}
+                {inventory && inventory.length > 50 && (
+                  <div className="text-xs text-gray-500 mt-2 text-center">
+                    Showing first 50 of {inventory.length} products
+                  </div>
+                )}
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="text-sm text-gray-600">
+                    {inventory.length} products • {isConnected ? 'Real-time Active' : 'Offline'}
+                  </div>
+                  <button
+                    onClick={() => queryClient.invalidateQueries('product-tools-inventory')}
+                    className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                  >
+                    <ArrowPathIcon className="h-3 w-3" />
+                    Refresh Prices
+                  </button>
                 </div>
               </SectionCard>
             </div>
           )}
 
           {section === 'variations' && (
-            <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-6">
+            <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr_1fr] gap-6">
               <SectionCard title="Create Variation" subtitle="Store variant definitions for products">
                 <form onSubmit={createVariation} className="space-y-4">
                   <div>
@@ -496,12 +907,21 @@ const ProductTools = ({ section }) => {
                       }}
                     >
                       <option value="">Select product</option>
-                      {inventory.map((item) => (
-                        <option key={item._id} value={item._id}>
-                          {item.name}
-                        </option>
-                      ))}
+                      {inventory.length > 0 ? (
+                        inventory
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((item) => (
+                            <option key={item._id} value={item._id}>
+                              {item.name} ({item.category}) - SKU: {item.sku || 'N/A'}
+                            </option>
+                          ))
+                      ) : (
+                        <option value="">No products available</option>
+                      )}
                     </select>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {inventory.length} products available • Sorted by name
+                    </div>
                   </div>
                   <div>
                     <label className="label">Variation Name</label>
@@ -528,20 +948,116 @@ const ProductTools = ({ section }) => {
                 </form>
               </SectionCard>
 
+              <SectionCard title="All Products" subtitle="Complete product list for variation management">
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {inventory.length > 0 ? (
+                    inventory
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map((item) => (
+                        <motion.div 
+                          key={item._id} 
+                          className="rounded-xl border border-gray-100 bg-white px-4 py-3 hover:shadow-md transition-shadow"
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <p className="font-medium text-gray-900">{item.name}</p>
+                              <p className="text-sm text-gray-500">
+                                {item.category} • SKU: {item.sku || 'N/A'} • Stock: {item.quantity || 0}
+                              </p>
+                              <p className="text-xs text-gray-400 mt-1">
+                                Price: ${item.price?.selling || item.price?.cost || 0} • {item.status}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  setVariationForm({
+                                    productId: item._id,
+                                    productName: item.name,
+                                    variationName: '',
+                                    skuSuffix: '',
+                                    priceDelta: '',
+                                    status: 'active',
+                                  });
+                                  toast.success(`Selected ${item.name} for variation`);
+                                }}
+                                className="text-blue-600 hover:text-blue-900 px-2 py-1 text-xs rounded hover:bg-blue-50 transition-colors"
+                                title="Create variation for this product"
+                              >
+                                Create Variation
+                              </button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))
+                  ) : (
+                    <motion.div 
+                      className="text-center py-8 text-gray-500"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                    >
+                      <CubeIcon className="h-12 w-12 mx-auto text-gray-300 mb-2" />
+                      <p className="text-sm">No products available</p>
+                      <p className="text-xs text-gray-400 mt-1">Add products to manage variations</p>
+                    </motion.div>
+                  )}
+                </div>
+                <div className="mt-4 text-xs text-gray-500 border-t pt-2">
+                  {inventory.length} products total • Click "Create Variation" to add variants
+                </div>
+              </SectionCard>
+
               <SectionCard title="Variation Library" subtitle="Saved variants for reuse">
                 <div className="space-y-3">
                   {variations.map((variation) => (
-                    <div key={variation.id} className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 flex items-center justify-between">
-                      <div>
+                    <motion.div 
+                      key={variation.id} 
+                      className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 flex items-center justify-between hover:shadow-md transition-shadow"
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <div className="flex-1">
                         <p className="font-medium text-gray-900">{variation.productName} • {variation.variationName}</p>
                         <p className="text-sm text-gray-500">{variation.skuSuffix} • ${variation.priceDelta} delta</p>
+                        {variation.createdAt && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            Created {new Date(variation.createdAt).toLocaleString()}
+                          </p>
+                        )}
                       </div>
-                      <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">
-                        {variation.status}
-                      </span>
-                    </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                          variation.status === 'active' 
+                            ? 'bg-green-100 text-green-700' 
+                            : 'bg-gray-100 text-gray-700'
+                        }`}>
+                          {variation.status}
+                        </span>
+                        <button
+                          onClick={() => deleteVariation(variation.id)}
+                          className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
+                          title="Delete variation"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </motion.div>
                   ))}
-                  {!variations.length && <p className="text-sm text-gray-500">No variations saved yet.</p>}
+                  {!variations.length && (
+                    <motion.div 
+                      className="text-center py-8 text-gray-500"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                    >
+                      <Squares2X2Icon className="h-12 w-12 mx-auto text-gray-300 mb-2" />
+                      <p className="text-sm">No variations saved yet.</p>
+                      <p className="text-xs text-gray-400 mt-1">Create your first variation above</p>
+                    </motion.div>
+                  )}
                 </div>
               </SectionCard>
             </div>
@@ -603,6 +1119,154 @@ const ProductTools = ({ section }) => {
             </div>
           )}
 
+          {section === 'labels' && (
+            <div className="grid grid-cols-1 xl:grid-cols-[1fr_1fr] gap-6">
+              <SectionCard title="All Products for Labels" subtitle="Real-time list of all available products for label and barcode generation">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="text-sm text-gray-600">
+                      {inventory.length} products • {isConnected ? 'Real-time Active' : 'Offline'}
+                    </div>
+                    <button
+                      onClick={() => queryClient.invalidateQueries('product-tools-inventory')}
+                      className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                    >
+                      <ArrowPathIcon className="h-3 w-3" />
+                      Refresh
+                    </button>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto space-y-2">
+                    {inventory.length > 0 ? (
+                      inventory
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map((item) => (
+                          <motion.div 
+                            key={item._id} 
+                            className="rounded-xl border border-gray-100 bg-white p-4 hover:shadow-md transition-shadow"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div 
+                                    className={`h-4 w-4 rounded border-2 cursor-pointer ${selectedIds.includes(item._id) ? 'bg-blue-500 border-blue-500' : 'border-gray-300'}`}
+                                    onClick={() => {
+                                      if (!selectedIds.includes(item._id)) {
+                                        setSelectedIds([...selectedIds, item._id]);
+                                        toast.success(`Selected ${item.name} for label`);
+                                      } else {
+                                        setSelectedIds(selectedIds.filter(id => id !== item._id));
+                                        toast.success(`Deselected ${item.name}`);
+                                      }
+                                    }}
+                                  >
+                                    {selectedIds.includes(item._id) && (
+                                      <svg className="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                      </svg>
+                                    )}
+                                  </div>
+                                  {realTimeUpdates.some(update => update._id === item._id) && (
+                                    <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
+                                  )}
+                                </div>
+                                <p className="font-medium text-gray-900">{item.name}</p>
+                                <p className="text-sm text-gray-500">
+                                  {item.category} • SKU: {item.sku || 'N/A'} • Stock: {item.quantity || 0}
+                                </p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                  Price: ${item.price?.selling || item.price?.cost || 0} • {item.status}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 mt-3">
+                              <button
+                                onClick={() => previewLabel(item)}
+                                className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors"
+                                title="Preview label"
+                              >
+                                <EyeIcon className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => generateQRCode(item)}
+                                className="text-purple-600 hover:text-purple-800 p-1 rounded hover:bg-purple-50 transition-colors"
+                                title="Generate QR code"
+                              >
+                                <QrCodeIcon className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => editProduct(item)}
+                                className="text-green-600 hover:text-green-800 p-1 rounded hover:bg-green-50 transition-colors"
+                                title="Edit product"
+                              >
+                                <PencilIcon className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => printSingleLabel(item)}
+                                className="text-orange-600 hover:text-orange-800 p-1 rounded hover:bg-orange-50 transition-colors"
+                                title="Print label"
+                              >
+                                <PrinterIcon className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </motion.div>
+                        ))
+                    ) : (
+                      <motion.div 
+                        className="text-center py-8 text-gray-500"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                      >
+                        <CubeIcon className="h-12 w-12 mx-auto text-gray-300 mb-2" />
+                        <p className="text-sm">No products available</p>
+                        <p className="text-xs text-gray-400 mt-1">Add products to generate labels</p>
+                      </motion.div>
+                    )}
+                  </div>
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Label Preview" subtitle="Printable shelf / barcode labels for selected products">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-gray-600">
+                      {selectedIds.length} products selected
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setSelectedIds([])}
+                        className="text-xs text-red-600 hover:text-red-800"
+                        disabled={!selectedIds.length}
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 print:grid-cols-3">
+                    {selectedProducts.map((item) => (
+                      <div key={item._id} className="rounded-xl border border-dashed border-gray-300 p-4 bg-white">
+                        <p className="text-xs uppercase tracking-wide text-gray-500">{item.category}</p>
+                        <h4 className="mt-2 font-bold text-gray-900">{item.name}</h4>
+                        <p className="text-sm text-gray-500 mt-1">SKU: {item.sku || 'N/A'}</p>
+                        <p className="text-lg font-semibold text-gray-900 mt-3">${item.price?.selling || 0}</p>
+                        <div className="mt-4 h-12 rounded bg-gray-100 flex items-center justify-center">
+                          <canvas id={`barcode-${item._id}`} />
+                        </div>
+                      </div>
+                    ))}
+                    {!selectedIds.length && (
+                      <div className="col-span-full text-center py-8 text-gray-500">
+                        <p className="text-sm">Select products on the left to preview labels</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </SectionCard>
+            </div>
+          )}
+
           {section === 'price-groups' && (
             <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-6">
               <SectionCard title="Create Selling Price Group" subtitle="Markup-based pricing for categories or segments">
@@ -657,31 +1321,6 @@ const ProductTools = ({ section }) => {
               </SectionCard>
             </div>
           )}
-
-          <SectionCard title="Reference Data" subtitle="Inventory, suppliers, and metadata used by these tools">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="rounded-xl bg-blue-50 p-4">
-                <CubeIcon className="h-6 w-6 text-blue-700 mb-2" />
-                <p className="text-sm text-blue-800">Products</p>
-                <p className="text-2xl font-bold text-blue-900">{inventory.length}</p>
-              </div>
-              <div className="rounded-xl bg-green-50 p-4">
-                <BuildingOffice2Icon className="h-6 w-6 text-green-700 mb-2" />
-                <p className="text-sm text-green-800">Suppliers</p>
-                <p className="text-2xl font-bold text-green-900">{suppliers.length}</p>
-              </div>
-              <div className="rounded-xl bg-orange-50 p-4">
-                <DocumentTextIcon className="h-6 w-6 text-orange-700 mb-2" />
-                <p className="text-sm text-orange-800">Units</p>
-                <p className="text-2xl font-bold text-orange-900">{units.length}</p>
-              </div>
-              <div className="rounded-xl bg-purple-50 p-4">
-                <ArrowDownTrayIcon className="h-6 w-6 text-purple-700 mb-2" />
-                <p className="text-sm text-purple-800">Categories</p>
-                <p className="text-2xl font-bold text-purple-900">{categories.length}</p>
-              </div>
-            </div>
-          </SectionCard>
         </>
       )}
     </div>

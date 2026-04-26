@@ -64,7 +64,7 @@ const PurchaseForm = ({ onClose, onSuccess }) => {
             <label className="label">Supplier</label>
             <select className="input" value={supplierId} onChange={(e) => setSupplierId(e.target.value)} required>
               <option value="">Select Supplier</option>
-              {suppliers?.data?.suppliers.map(s => <option key={s._id} value={s._id}>{s.name} ({s.company_name})</option>)}
+              {(suppliers?.data?.data?.suppliers || suppliers?.data?.suppliers || []).map(s => <option key={s._id} value={s._id}>{s.name} ({s.company_name})</option>)}
             </select>
           </div>
 
@@ -79,7 +79,7 @@ const PurchaseForm = ({ onClose, onSuccess }) => {
                   <label className="label text-xs">Product</label>
                   <select className="input text-sm" value={item.product} onChange={(e) => updateItem(index, 'product', e.target.value)} required>
                     <option value="">Select Product</option>
-                    {inventory?.data?.inventory.map(i => <option key={i._id} value={i._id}>{i.name} (SKU: {i.sku})</option>)}
+                    {(inventory?.data?.data?.inventory || inventory?.data?.inventory || []).map(i => <option key={i._id} value={i._id}>{i.name} (SKU: {i.sku})</option>)}
                   </select>
                 </div>
                 <div className="md:col-span-2">

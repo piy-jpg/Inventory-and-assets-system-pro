@@ -1,3 +1,4 @@
+
 const { body, validationResult } = require('express-validator');
 
 const handleValidationErrors = (req, res, next) => {
@@ -42,6 +43,37 @@ const validateUser = [
   handleValidationErrors
 ];
 
+const validateUserUpdate = [
+  body('username')
+    .optional()
+    .isLength({ min: 3, max: 30 })
+    .withMessage('Username must be between 3 and 30 characters')
+    .matches(/^[a-zA-Z0-9_]+$/)
+    .withMessage('Username can only contain letters, numbers, and underscores'),
+  body('email')
+    .optional()
+    .notEmpty()
+    .withMessage('Email cannot be empty')
+    .normalizeEmail(),
+  body('password')
+    .optional()
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long'),
+  body('firstName')
+    .optional()
+    .isLength({ max: 50 })
+    .withMessage('First name cannot exceed 50 characters'),
+  body('lastName')
+    .optional()
+    .isLength({ max: 50 })
+    .withMessage('Last name cannot exceed 50 characters'),
+  body('role')
+    .optional()
+    .isIn(['admin', 'manager', 'employee'])
+    .withMessage('Role must be admin, manager, or employee'),
+  handleValidationErrors
+];
+
 const validateInventory = [
   body('name')
     .notEmpty()
@@ -71,6 +103,28 @@ const validateInventory = [
     .optional()
     .isInt({ min: 0 })
     .withMessage('Maximum stock level must be a non-negative integer'),
+  handleValidationErrors
+];
+
+const validateStockAdjustment = [
+  body('product')
+    .notEmpty()
+    .withMessage('Product ID is required')
+    .isMongoId()
+    .withMessage('Valid product ID is required'),
+  body('type')
+    .isIn(['increase', 'decrease'])
+    .withMessage('Adjustment type must be increase or decrease'),
+  body('quantity')
+    .isInt({ min: 1 })
+    .withMessage('Quantity must be a positive integer'),
+  body('reason')
+    .isIn(['correction', 'damage', 'theft', 'expired', 'return', 'other'])
+    .withMessage('Invalid reason for adjustment'),
+  body('notes')
+    .optional()
+    .isLength({ max: 500 })
+    .withMessage('Notes cannot exceed 500 characters'),
   handleValidationErrors
 ];
 
@@ -172,7 +226,9 @@ const validateLogin = [
 
 module.exports = {
   validateUser,
+  validateUserUpdate,
   validateInventory,
+  validateStockAdjustment,
   validateAsset,
   validateTransaction,
   validateSupplier,

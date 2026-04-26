@@ -76,6 +76,51 @@ router.get('/', authMiddleware, checkPermission('transactions_read'), async (req
   }
 });
 
+router.get('/summary/stats', authMiddleware, checkPermission('transactions_read'), async (req, res, next) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const dateFilter = {};
+    if (startDate) dateFilter.$gte = new Date(startDate);
+    if (endDate) dateFilter.$lte = new Date(endDate);
+
+    const matchStage = dateFilter.$gte || dateFilter.$lte 
+      ? { date: dateFilter }
+      : {};
+
+    const stats = await Transaction.aggregate([
+      { $match: matchStage },
+      {
+        $group: {
+          _id: '$type',
+          count: { $sum: 1 },
+          totalAmount: { $sum: '$amount.total' },
+          avgAmount: { $avg: '$amount.total' }
+        }
+      }
+    ]);
+
+    const statusStats = await Transaction.aggregate([
+      { $match: matchStage },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        typeStats: stats,
+        statusStats: statusStats
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/:id', authMiddleware, checkPermission('transactions_read'), async (req, res, next) => {
   try {
     const transaction = await Transaction.findById(req.params.id)
@@ -279,51 +324,6 @@ router.post('/:id/cancel', authMiddleware, checkPermission('transactions_write')
       success: true,
       message: 'Transaction cancelled successfully',
       data: { transaction }
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get('/summary/stats', authMiddleware, checkPermission('transactions_read'), async (req, res, next) => {
-  try {
-    const { startDate, endDate } = req.query;
-    const dateFilter = {};
-    if (startDate) dateFilter.$gte = new Date(startDate);
-    if (endDate) dateFilter.$lte = new Date(endDate);
-
-    const matchStage = dateFilter.$gte || dateFilter.$lte 
-      ? { date: dateFilter }
-      : {};
-
-    const stats = await Transaction.aggregate([
-      { $match: matchStage },
-      {
-        $group: {
-          _id: '$type',
-          count: { $sum: 1 },
-          totalAmount: { $sum: '$amount.total' },
-          avgAmount: { $avg: '$amount.total' }
-        }
-      }
-    ]);
-
-    const statusStats = await Transaction.aggregate([
-      { $match: matchStage },
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    res.json({
-      success: true,
-      data: {
-        typeStats: stats,
-        statusStats: statusStats
-      }
     });
   } catch (error) {
     next(error);

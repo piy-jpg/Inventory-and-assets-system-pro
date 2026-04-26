@@ -63,6 +63,35 @@ router.get('/', authMiddleware, checkPermission('assets_read'), async (req, res,
   }
 });
 
+router.get('/maintenance/due', authMiddleware, checkPermission('assets_read'), async (req, res, next) => {
+  try {
+    const dueAssets = await Asset.find({
+      'maintenance.nextMaintenanceDue': { $lte: new Date() },
+      status: { $ne: 'disposed' }
+    }).populate('assigned_to.user_id', 'firstName lastName email');
+
+    res.json({
+      success: true,
+      data: { dueAssets }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/categories/list', authMiddleware, checkPermission('assets_read'), async (req, res, next) => {
+  try {
+    const categories = await Asset.distinct('category');
+    
+    res.json({
+      success: true,
+      data: { categories }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/:id', authMiddleware, checkPermission('assets_read'), async (req, res, next) => {
   try {
     const asset = await Asset.findById(req.params.id)
@@ -298,35 +327,6 @@ router.post('/:id/maintenance', authMiddleware, checkPermission('assets_write'),
       success: true,
       message: 'Maintenance record added successfully',
       data: { asset }
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get('/maintenance/due', authMiddleware, checkPermission('assets_read'), async (req, res, next) => {
-  try {
-    const dueAssets = await Asset.find({
-      'maintenance.nextMaintenanceDue': { $lte: new Date() },
-      status: { $ne: 'disposed' }
-    }).populate('assigned_to.user_id', 'firstName lastName email');
-
-    res.json({
-      success: true,
-      data: { dueAssets }
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get('/categories/list', authMiddleware, checkPermission('assets_read'), async (req, res, next) => {
-  try {
-    const categories = await Asset.distinct('category');
-    
-    res.json({
-      success: true,
-      data: { categories }
     });
   } catch (error) {
     next(error);

@@ -1,12 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   MagnifyingGlassIcon,
   PlusIcon,
   PencilIcon,
   TrashIcon,
-  ShieldCheckIcon,
-  UserIcon
+  ArrowPathIcon,
+  EllipsisVerticalIcon,
+  UserCircleIcon,
+  LockClosedIcon,
+  LockOpenIcon
 } from '@heroicons/react/24/outline';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { usersAPI } from '../services/api';
@@ -20,15 +23,30 @@ const Users = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [page, setPage] = useState(1);
+  const [actionMenuOpen, setActionMenuOpen] = useState(null);
 
   const queryClient = useQueryClient();
+  const queryOptions = {
+    keepPreviousData: true,
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
+  };
 
-  const { data: usersData, isLoading } = useQuery(
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (actionMenuOpen && !event.target.closest('.action-menu')) {
+        setActionMenuOpen(null);
+      }
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [actionMenuOpen]);
+
+  const { data: usersData, isLoading, isFetching, refetch } = useQuery(
     ['users', { search, ...filter, page }],
     () => usersAPI.getAll({ search, ...filter, page }),
-    {
-      keepPreviousData: true,
-    }
+    queryOptions
   );
 
   const deleteMutation = useMutation(usersAPI.delete, {
@@ -41,6 +59,7 @@ const Users = () => {
     },
   });
 
+  
   const statusMutation = useMutation(
     ({ id, status }) => usersAPI.updateStatus(id, status),
     {
@@ -79,9 +98,10 @@ const Users = () => {
 
   const getRoleColor = (role) => {
     switch (role) {
-      case 'admin': return 'bg-purple-100 text-purple-800';
+      case 'admin': return 'bg-red-100 text-red-800';
       case 'manager': return 'bg-blue-100 text-blue-800';
-      case 'employee': return 'bg-gray-100 text-gray-800';
+      case 'staff': return 'bg-green-100 text-green-800';
+      case 'viewer': return 'bg-gray-100 text-gray-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -92,6 +112,10 @@ const Users = () => {
 
   const users = usersData?.data?.data?.users || [];
   const pagination = usersData?.data?.data?.pagination || {};
+  const activeUsers = users.filter((user) => user.isActive).length;
+  const inactiveUsers = users.filter((user) => !user.isActive).length;
+  const adminUsers = users.filter((user) => user.role === 'admin').length;
+  const managerUsers = users.filter((user) => user.role === 'manager').length;
 
   return (
     <div className="space-y-6">
@@ -99,19 +123,59 @@ const Users = () => {
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="flex justify-between items-center"
       >
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Users</h1>
-          <p className="text-gray-600">Manage system users and permissions</p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Users</h1>
+            <p className="text-gray-600">Manage system users and permissions</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className={`rounded-full px-3 py-1 text-sm font-medium ${isFetching ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                {isFetching ? 'Refreshing live users' : 'Live user sync active'}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="flex items-center space-x-2 px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <ArrowPathIcon className={`h-5 w-5 ${isFetching ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+            <button
+              onClick={() => setShowForm(true)}
+              className="btn btn-primary flex items-center"
+            >
+              <PlusIcon className="h-5 w-5 mr-2" />
+              Add User
+            </button>
+          </div>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="btn btn-primary flex items-center"
-        >
-          <PlusIcon className="h-5 w-5 mr-2" />
-          Add User
-        </button>
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.05 }}
+        className="grid grid-cols-2 gap-4 lg:grid-cols-4"
+      >
+        <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">Active Users</p>
+          <p className="mt-2 text-2xl font-bold text-emerald-900">{activeUsers}</p>
+        </div>
+        <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-rose-600">Inactive Users</p>
+          <p className="mt-2 text-2xl font-bold text-rose-900">{inactiveUsers}</p>
+        </div>
+        <div className="rounded-2xl border border-purple-100 bg-purple-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-purple-600">Admins</p>
+          <p className="mt-2 text-2xl font-bold text-purple-900">{adminUsers}</p>
+        </div>
+        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">Managers</p>
+          <p className="mt-2 text-2xl font-bold text-blue-900">{managerUsers}</p>
+        </div>
       </motion.div>
 
       <motion.div
@@ -141,9 +205,10 @@ const Users = () => {
               onChange={(e) => setFilter({ ...filter, role: e.target.value })}
             >
               <option value="">All Roles</option>
-              <option value="admin">Admin</option>
+              <option value="admin">Administrator</option>
               <option value="manager">Manager</option>
-              <option value="employee">Employee</option>
+              <option value="staff">Staff</option>
+              <option value="viewer">Viewer</option>
             </select>
             
             <select
@@ -152,10 +217,13 @@ const Users = () => {
               onChange={(e) => setFilter({ ...filter, department: e.target.value })}
             >
               <option value="">All Departments</option>
+              <option value="Management">Management</option>
+              <option value="Sales">Sales</option>
+              <option value="Warehouse">Warehouse</option>
+              <option value="Customer Support">Customer Support</option>
               <option value="IT">IT</option>
               <option value="Finance">Finance</option>
               <option value="Operations">Operations</option>
-              <option value="Sales">Sales</option>
             </select>
             
             <select
@@ -244,30 +312,52 @@ const Users = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex space-x-2">
-                        <button
+                      <div className="flex gap-2">
+                        <input 
+                          type="button" 
+                          value="EDIT" 
                           onClick={() => handleEdit(user)}
-                          className="text-primary-600 hover:text-primary-900"
-                        >
-                          <PencilIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleStatusToggle(user)}
-                          className="text-yellow-600 hover:text-yellow-900"
-                          disabled={statusMutation.isLoading}
-                        >
-                          {user.isActive ? (
-                            <UserIcon className="h-4 w-4" />
-                          ) : (
-                            <ShieldCheckIcon className="h-4 w-4" />
-                          )}
-                        </button>
-                        <button
+                          style={{
+                            backgroundColor: '#2563eb',
+                            color: 'white',
+                            border: '2px solid #1d4ed8',
+                            padding: '6px 12px',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                            cursor: 'pointer'
+                          }}
+                        />
+                        <input 
+                          type="button" 
+                          value="DELETE" 
                           onClick={() => handleDelete(user._id)}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
+                          style={{
+                            backgroundColor: '#dc2626',
+                            color: 'white',
+                            border: '2px solid #b91c1c',
+                            padding: '6px 12px',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                            cursor: 'pointer'
+                          }}
+                        />
+                        <input 
+                          type="button" 
+                          value="⋮" 
+                          onClick={() => setActionMenuOpen(actionMenuOpen === user._id ? null : user._id)}
+                          style={{
+                            backgroundColor: '#6b7280',
+                            color: 'white',
+                            border: '2px solid #4b5563',
+                            padding: '6px 8px',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                            cursor: 'pointer'
+                          }}
+                        />
                       </div>
                     </td>
                   </motion.tr>
@@ -313,8 +403,9 @@ const Users = () => {
           user={editingUser}
           onClose={handleFormClose}
           onSuccess={() => {
-            handleFormClose();
             queryClient.invalidateQueries('users');
+            setShowForm(false);
+            setEditingUser(null);
           }}
         />
       )}

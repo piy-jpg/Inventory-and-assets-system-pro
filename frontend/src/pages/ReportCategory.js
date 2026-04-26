@@ -12,7 +12,9 @@ import {
   BellIcon,
   DocumentTextIcon,
   ArrowDownTrayIcon,
-  CalendarIcon
+  CalendarIcon,
+  UserCircleIcon,
+  SignalIcon
 } from '@heroicons/react/24/outline';
 import {
   inventoryAPI,
@@ -59,9 +61,9 @@ const reportConfigs = {
       inventoryAPI.getLowStock()
     ]),
     normalize: ([stockResponse, lowStockResponse]) => {
-      const stockData = stockResponse.data.data || {};
+      const stockData = stockResponse?.data?.data || {};
       const items = stockData.items || [];
-      const lowStockItems = lowStockResponse.data.data?.lowStockItems || [];
+      const lowStockItems = lowStockResponse?.data?.data?.lowStockItems || [];
 
       return {
         stats: [
@@ -96,8 +98,8 @@ const reportConfigs = {
       analyticsAPI.getReportsSummary()
     ]),
     normalize: ([salesResponse, summaryResponse]) => {
-      const sales = salesResponse.data.data?.sales || [];
-      const summary = summaryResponse.data.data || {};
+      const sales = salesResponse?.data?.data?.sales || [];
+      const summary = summaryResponse?.data?.data || {};
 
       return {
         stats: [
@@ -132,8 +134,8 @@ const reportConfigs = {
       analyticsAPI.getReportsSummary()
     ]),
     normalize: ([purchasesResponse, summaryResponse]) => {
-      const purchases = purchasesResponse.data.data?.purchases || [];
-      const summary = summaryResponse.data.data || {};
+      const purchases = purchasesResponse?.data?.data?.purchases || [];
+      const summary = summaryResponse?.data?.data || {};
       return {
         stats: [
           { label: 'Purchase Count', value: summary.purchases?.count || purchases.length },
@@ -167,8 +169,8 @@ const reportConfigs = {
       analyticsAPI.getReportsSummary()
     ]),
     normalize: ([expensesResponse, summaryResponse]) => {
-      const expenses = expensesResponse.data.data?.expenses || [];
-      const summary = summaryResponse.data.data || {};
+      const expenses = expensesResponse?.data?.data?.expenses || [];
+      const summary = summaryResponse?.data?.data || {};
       return {
         stats: [
           { label: 'Expense Count', value: summary.expenses?.count || expenses.length },
@@ -205,14 +207,14 @@ const reportConfigs = {
       analyticsAPI.getAssetsOverview()
     ]),
     normalize: ([assetsResponse, overviewResponse]) => {
-      const assets = assetsResponse.data.data?.assets || [];
-      const overview = overviewResponse.data.data || {};
+      const assets = assetsResponse?.data?.assets || [];
+      const overview = overviewResponse?.data?.data || {};
       const totalAssetValue = assets.reduce((sum, asset) => sum + (asset.purchase_cost?.amount || 0), 0);
       return {
         stats: [
           { label: 'Assets', value: assets.length },
           { label: 'Asset Value', value: currency(totalAssetValue) },
-          { label: 'Maintenance Due', value: overview.maintenanceDueCount || 0 },
+          { label: 'Maintenance Due', value: overview.maintenance?.dueCount || 0 },
           { label: 'Active Assets', value: assets.filter((asset) => asset.status === 'active').length }
         ],
         highlights: [
@@ -238,7 +240,7 @@ const reportConfigs = {
     icon: ArrowPathIcon,
     fetcher: () => stockTransfersAPI.getAll({ limit: 50 }),
     normalize: (response) => {
-      const transfers = response.data.data?.transfers || [];
+      const transfers = response?.data?.data?.transfers || [];
       return {
         stats: [
           { label: 'Transfers', value: transfers.length },
@@ -263,38 +265,6 @@ const reportConfigs = {
       };
     }
   },
-  'user-activity': {
-    title: 'User Activity Logs',
-    description: 'User access, roles, and recent login visibility for admins.',
-    icon: UserGroupIcon,
-    adminOnly: true,
-    fetcher: () => usersAPI.getAll({ limit: 50 }),
-    normalize: (response) => {
-      const users = response.data.data?.users || [];
-      return {
-        stats: [
-          { label: 'Users', value: users.length },
-          { label: 'Admins', value: users.filter((user) => user.role === 'admin').length },
-          { label: 'Active Users', value: users.filter((user) => user.isActive).length },
-          { label: 'Logged In Recently', value: users.filter((user) => user.lastLogin).length }
-        ],
-        highlights: [
-          `Managers: ${users.filter((user) => user.role === 'manager').length}`,
-          `Employees: ${users.filter((user) => user.role === 'employee').length}`,
-          `Never logged in: ${users.filter((user) => !user.lastLogin).length}`
-        ],
-        columns: ['Name', 'Email', 'Role', 'Department', 'Last Login', 'Status'],
-        rows: users.map((user) => [
-          `${user.firstName} ${user.lastName}`,
-          user.email,
-          user.role,
-          user.department || '-',
-          dateValue(user.lastLogin),
-          user.isActive ? 'Active' : 'Inactive'
-        ])
-      };
-    }
-  },
   alerts: {
     title: 'Alerts & Exceptions',
     description: 'Operational alerts, severities, and exception trends.',
@@ -304,8 +274,8 @@ const reportConfigs = {
       analyticsAPI.getAlertsAnalysis()
     ]),
     normalize: ([alertsResponse, analysisResponse]) => {
-      const alerts = alertsResponse.data.data?.alerts || [];
-      const analysis = analysisResponse.data.data || {};
+      const alerts = alertsResponse?.data?.data?.alerts || [];
+      const analysis = analysisResponse?.data?.data || {};
       return {
         stats: [
           { label: 'Alerts', value: alerts.length },
@@ -330,6 +300,41 @@ const reportConfigs = {
       };
     }
   },
+  'user-activity': {
+    title: 'User Activity Logs',
+    description: 'User login patterns, actions performed, and system access tracking.',
+    icon: UserCircleIcon,
+    fetcher: () => Promise.all([
+      usersAPI.getAll({ limit: 50 }),
+      analyticsAPI.getUserActivityAnalysis()
+    ]),
+    normalize: ([usersResponse, activityResponse]) => {
+      const users = usersResponse?.data?.users || [];
+      const activity = activityResponse?.data?.data || {};
+      return {
+        stats: [
+          { label: 'Total Users', value: users.length },
+          { label: 'Active Today', value: activity.activeToday || 0 },
+          { label: 'Actions Today', value: activity.actionsToday || 0 },
+          { label: 'Avg Session', value: `${activity.averageSessionMinutes || 0}m` }
+        ],
+        highlights: [
+          `Users logged in today: ${activity.loggedInToday || 0}`,
+          `Most active user: ${activity.mostActiveUser || 'N/A'}`,
+          `Peak activity hour: ${activity.peakActivityHour || 'N/A'}`
+        ],
+        columns: ['User', 'Department', 'Last Login', 'Actions Today', 'Session Time', 'Status'],
+        rows: users.map((user) => [
+          `${user.firstName} ${user.lastName}`,
+          user.department || '-',
+          dateValue(user.lastLogin),
+          user.actionsToday || 0,
+          `${user.sessionMinutes || 0}m`,
+          user.isActive ? 'Active' : 'Inactive'
+        ])
+      };
+    }
+  },
   custom: {
     title: 'Custom Reports / Export',
     description: 'Cross-functional summary with quick export of the visible dataset.',
@@ -340,9 +345,9 @@ const reportConfigs = {
       salesAPI.getAll({ limit: 50 })
     ]),
     normalize: ([summaryResponse, inventoryResponse, salesResponse]) => {
-      const summary = summaryResponse.data.data || {};
-      const inventory = inventoryResponse.data.data?.inventory || [];
-      const sales = salesResponse.data.data?.sales || [];
+      const summary = summaryResponse?.data?.data || {};
+      const inventory = inventoryResponse?.data?.data?.inventory || [];
+      const sales = salesResponse?.data?.data?.sales || [];
       return {
         stats: [
           { label: 'Sales', value: currency(summary.sales?.total || 0) },
@@ -382,7 +387,10 @@ const ReportCategory = () => {
     ['report-category', reportType],
     () => config.fetcher(),
     {
-      enabled: Boolean(config) && (!config?.adminOnly || user?.role === 'admin')
+      enabled: Boolean(config) && (!config?.adminOnly || user?.role === 'admin'),
+      refetchInterval: 10000,
+      refetchOnWindowFocus: true,
+      keepPreviousData: true,
     }
   );
 
@@ -425,6 +433,17 @@ const ReportCategory = () => {
   };
 
   const Icon = config.icon;
+  const quickLinks = {
+    sales: '/sell',
+    inventory: '/inventory',
+    customers: '/contacts',
+    suppliers: '/suppliers',
+    assets: '/assets',
+    'stock-transfers': '/stock-transfers',
+    alerts: '/alerts',
+    'user-activity': '/users',
+    custom: '/reports',
+  };
 
   return (
     <div className="space-y-6">
@@ -443,6 +462,10 @@ const ReportCategory = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+            <SignalIcon className="h-4 w-4" />
+            <span>Auto-refresh every 10s</span>
+          </div>
           <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600">
             <CalendarIcon className="h-4 w-4" />
             <span>{dateRange.startDate} to {dateRange.endDate}</span>
@@ -533,6 +556,11 @@ const ReportCategory = () => {
                 <div className="mt-4 space-y-3">
                   <button onClick={exportCsv} className="btn btn-secondary w-full text-sm">Download CSV</button>
                   <button onClick={() => window.print()} className="btn btn-secondary w-full text-sm">Print Report</button>
+                  {quickLinks[reportType] ? (
+                    <Link to={quickLinks[reportType]} className="btn btn-secondary block w-full text-center text-sm">
+                      Open Source Workflow
+                    </Link>
+                  ) : null}
                   <Link to="/reports" className="btn btn-secondary block w-full text-center text-sm">Browse Other Reports</Link>
                 </div>
               </div>

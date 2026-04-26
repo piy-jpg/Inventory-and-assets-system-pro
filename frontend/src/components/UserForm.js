@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon } from '@heroicons/react/24/outline';
-import { useMutation, useQueryClient } from 'react-query';
+import { useMutation } from 'react-query';
 import { usersAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import LoadingSpinner from './LoadingSpinner';
@@ -19,12 +19,11 @@ const UserForm = ({ user, onClose, onSuccess }) => {
     permissions: [],
   });
 
-  const queryClient = useQueryClient();
   const isEditing = !!user;
 
   const createMutation = useMutation(usersAPI.create, {
-    onSuccess: () => {
-      toast.success('User created successfully');
+    onSuccess: (data) => {
+      toast.success('User created successfully! They can now log in with their credentials.');
       onSuccess();
     },
     onError: (error) => {
@@ -81,14 +80,15 @@ const UserForm = ({ user, onClose, onSuccess }) => {
   const getDefaultPermissions = (role) => {
     switch (role) {
       case 'admin':
-        return ['inventory_read', 'inventory_write', 'assets_read', 'assets_write', 
-                'transactions_read', 'transactions_write', 'users_read', 'users_write',
-                'analytics_view', 'settings_manage'];
+        return ['users_read', 'users_write', 'users_delete', 'inventory_read', 'inventory_write', 'inventory_delete', 'assets_read', 'assets_write', 'assets_delete', 'transactions_read', 'transactions_write', 'transactions_delete', 'sales_read', 'sales_write', 'sales_delete', 'purchases_read', 'purchases_write', 'purchases_delete', 'reports_view', 'reports_export', 'analytics_view', 'settings_manage', 'system_admin', 'backup_manage', 'roles_manage'];
       case 'manager':
-        return ['inventory_read', 'inventory_write', 'assets_read', 'assets_write',
-                'transactions_read', 'transactions_write', 'users_read', 'analytics_view'];
+        return ['users_read', 'users_write', 'inventory_read', 'inventory_write', 'inventory_delete', 'assets_read', 'assets_write', 'transactions_read', 'transactions_write', 'sales_read', 'sales_write', 'purchases_read', 'purchases_write', 'reports_view', 'reports_export', 'analytics_view'];
+      case 'staff':
+        return ['inventory_read', 'inventory_write', 'assets_read', 'transactions_read', 'transactions_write', 'sales_read', 'sales_write', 'reports_view'];
+      case 'viewer':
+        return ['inventory_read', 'assets_read', 'transactions_read', 'sales_read', 'purchases_read', 'reports_view'];
       default:
-        return ['inventory_read', 'assets_read', 'transactions_read'];
+        return ['inventory_read', 'assets_read', 'transactions_read', 'sales_read', 'reports_view'];
     }
   };
 
@@ -101,10 +101,56 @@ const UserForm = ({ user, onClose, onSuccess }) => {
     }));
   };
 
+  const validateForm = () => {
+    const errors = {};
+    
+    if (!formData.username || formData.username.trim().length < 3) {
+      errors.username = 'Username must be at least 3 characters';
+    }
+    
+    if (!formData.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      errors.email = 'Please enter a valid email address';
+    }
+    
+    if (!isEditing && (!formData.password || formData.password.length < 6)) {
+      errors.password = 'Password must be at least 6 characters';
+    }
+    
+    if (!formData.firstName || formData.firstName.trim().length < 2) {
+      errors.firstName = 'First name must be at least 2 characters';
+    }
+    
+    if (!formData.lastName || formData.lastName.trim().length < 2) {
+      errors.lastName = 'Last name must be at least 2 characters';
+    }
+    
+    if (!formData.role) {
+      errors.role = 'Please select a role';
+    }
+    
+    if (formData.permissions.length === 0) {
+      errors.permissions = 'Please select at least one permission';
+    }
+    
+    return errors;
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     
-    const data = { ...formData };
+    const errors = validateForm();
+    if (Object.keys(errors).length > 0) {
+      Object.values(errors).forEach(error => toast.error(error));
+      return;
+    }
+    
+    const data = { 
+      ...formData,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      lastLogin: null
+    };
+    
     if (isEditing && !data.password) {
       delete data.password;
     }
@@ -117,27 +163,42 @@ const UserForm = ({ user, onClose, onSuccess }) => {
   };
 
   const availablePermissions = [
-    { id: 'inventory_read', label: 'Read Inventory' },
-    { id: 'inventory_write', label: 'Write Inventory' },
-    { id: 'assets_read', label: 'Read Assets' },
-    { id: 'assets_write', label: 'Write Assets' },
-    { id: 'transactions_read', label: 'Read Transactions' },
-    { id: 'transactions_write', label: 'Write Transactions' },
-    { id: 'users_read', label: 'Read Users' },
-    { id: 'users_write', label: 'Write Users' },
+    { id: 'users_read', label: 'View Users' },
+    { id: 'users_write', label: 'Create/Edit Users' },
+    { id: 'users_delete', label: 'Delete Users' },
+    { id: 'inventory_read', label: 'View Inventory' },
+    { id: 'inventory_write', label: 'Manage Inventory' },
+    { id: 'inventory_delete', label: 'Delete Inventory' },
+    { id: 'assets_read', label: 'View Assets' },
+    { id: 'assets_write', label: 'Manage Assets' },
+    { id: 'assets_delete', label: 'Delete Assets' },
+    { id: 'transactions_read', label: 'View Transactions' },
+    { id: 'transactions_write', label: 'Manage Transactions' },
+    { id: 'transactions_delete', label: 'Delete Transactions' },
+    { id: 'sales_read', label: 'View Sales' },
+    { id: 'sales_write', label: 'Manage Sales' },
+    { id: 'sales_delete', label: 'Delete Sales' },
+    { id: 'purchases_read', label: 'View Purchases' },
+    { id: 'purchases_write', label: 'Manage Purchases' },
+    { id: 'purchases_delete', label: 'Delete Purchases' },
+    { id: 'reports_view', label: 'View Reports' },
+    { id: 'reports_export', label: 'Export Reports' },
     { id: 'analytics_view', label: 'View Analytics' },
     { id: 'settings_manage', label: 'Manage Settings' },
+    { id: 'system_admin', label: 'System Admin' },
+    { id: 'backup_manage', label: 'Manage Backups' },
+    { id: 'roles_manage', label: 'Manage Roles' },
   ];
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 overflow-y-auto">
-        <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+      <div className="fixed inset-0 z-[9999] overflow-y-auto">
+        <div className="flex min-h-screen items-center justify-center p-4">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+            className="fixed inset-0 z-[9998] bg-black/50 backdrop-blur-sm transition-opacity"
             onClick={onClose}
           />
 
@@ -146,10 +207,10 @@ const UserForm = ({ user, onClose, onSuccess }) => {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full"
+            className="relative z-[9999] w-full max-w-4xl overflow-hidden rounded-2xl bg-white text-left shadow-2xl"
           >
-            <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-              <div className="flex justify-between items-center mb-4">
+            <div className="max-h-[90vh] overflow-y-auto bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+              <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-lg font-medium text-gray-900">
                   {isEditing ? 'Edit User' : 'Add New User'}
                 </h3>
@@ -209,9 +270,10 @@ const UserForm = ({ user, onClose, onSuccess }) => {
                       value={formData.role}
                       onChange={(e) => handleRoleChange(e.target.value)}
                     >
-                      <option value="employee">Employee</option>
+                      <option value="staff">Staff</option>
+                      <option value="viewer">Viewer</option>
                       <option value="manager">Manager</option>
-                      <option value="admin">Admin</option>
+                      <option value="admin">Administrator</option>
                     </select>
                   </div>
 
@@ -279,7 +341,7 @@ const UserForm = ({ user, onClose, onSuccess }) => {
                   </div>
                 </div>
 
-                <div className="flex justify-end space-x-3 pt-4">
+                <div className="sticky bottom-0 flex justify-end space-x-3 border-t border-gray-100 bg-white pt-4">
                   <button
                     type="button"
                     onClick={onClose}

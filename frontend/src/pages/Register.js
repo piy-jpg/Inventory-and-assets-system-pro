@@ -48,7 +48,7 @@ const Register = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex items-center justify-center bg-blue-50 py-12 px-4 sm:px-6 lg:px-8">
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -59,10 +59,10 @@ const Register = () => {
           <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-primary-100">
             <span className="text-2xl font-bold text-primary-600">SI</span>
           </div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-blue-900">
             Create your account
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
+          <p className="mt-2 text-center text-sm text-blue-600">
             Join the Smart Inventory System
           </p>
         </div>
@@ -188,7 +188,7 @@ const Register = () => {
           </div>
 
           <div className="text-center text-sm">
-            <span className="text-gray-600">Already have an account? </span>
+            <span className="text-blue-600">Already have an account? </span>
             <Link to="/login" className="font-medium text-primary-600 hover:text-primary-500">
               Sign in
             </Link>

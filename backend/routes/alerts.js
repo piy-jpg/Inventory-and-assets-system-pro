@@ -64,6 +64,68 @@ router.get('/', authMiddleware, async (req, res, next) => {
   }
 });
 
+router.get('/summary/stats', authMiddleware, async (req, res, next) => {
+  try {
+    const stats = await Alert.aggregate([
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const severityStats = await Alert.aggregate([
+      {
+        $group: {
+          _id: '$severity',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const typeStats = await Alert.aggregate([
+      {
+        $group: {
+          _id: '$type',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const recentAlerts = await Alert.find({ status: 'active' })
+      .sort({ 'timestamps.created': -1 })
+      .limit(5)
+      .populate('assigned_to', 'firstName lastName')
+      .exec();
+
+    res.json({
+      success: true,
+      data: {
+        statusStats: stats,
+        severityStats: severityStats,
+        typeStats: typeStats,
+        recentAlerts
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/active/count', authMiddleware, async (req, res, next) => {
+  try {
+    const count = await Alert.countDocuments({ status: 'active' });
+    
+    res.json({
+      success: true,
+      data: { count }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/:id', authMiddleware, async (req, res, next) => {
   try {
     const alert = await Alert.findById(req.params.id)
@@ -283,68 +345,6 @@ router.post('/:id/assign', authMiddleware, async (req, res, next) => {
       success: true,
       message: 'Alert assigned successfully',
       data: { alert }
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get('/summary/stats', authMiddleware, async (req, res, next) => {
-  try {
-    const stats = await Alert.aggregate([
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    const severityStats = await Alert.aggregate([
-      {
-        $group: {
-          _id: '$severity',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    const typeStats = await Alert.aggregate([
-      {
-        $group: {
-          _id: '$type',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    const recentAlerts = await Alert.find({ status: 'active' })
-      .sort({ 'timestamps.created': -1 })
-      .limit(5)
-      .populate('assigned_to', 'firstName lastName')
-      .exec();
-
-    res.json({
-      success: true,
-      data: {
-        statusStats: stats,
-        severityStats: severityStats,
-        typeStats: typeStats,
-        recentAlerts
-      }
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get('/active/count', authMiddleware, async (req, res, next) => {
-  try {
-    const count = await Alert.countDocuments({ status: 'active' });
-    
-    res.json({
-      success: true,
-      data: { count }
     });
   } catch (error) {
     next(error);

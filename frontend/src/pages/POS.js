@@ -36,12 +36,26 @@ import LoadingSpinner from '../components/LoadingSpinner';
 
 const Sell = () => {
   const location = useLocation();
-  const [activeTab, setActiveTab] = useState('sales');
+  const routeTabMap = React.useMemo(
+    () => ({
+      '/sell': 'sales',
+      '/sell/pos': 'pos',
+      '/sell/customers': 'customers',
+      '/sell/invoices': 'invoices',
+      '/sell/payments': 'payments',
+      '/sell/returns': 'returns',
+      '/sell/quotes': 'quotes',
+      '/sell/reports': 'reports',
+      '/sell/agents': 'agents',
+    }),
+    []
+  );
+  const [activeTab, setActiveTab] = useState(routeTabMap[location.pathname] || 'sales');
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [dateRange, setDateRange] = useState({
-    startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0]
+    startDate: '2026-03-23', // Start date to include all sales data
+    endDate: '2026-04-30'   // End date to include all sales data
   });
   const [cart, setCart] = useState([]);
   const [customerName, setCustomerName] = useState('Walk-in Customer');
@@ -56,6 +70,12 @@ const Sell = () => {
 
   React.useEffect(() => {
     const smartCommand = location.state?.smartCommand;
+    const routeTab = routeTabMap[location.pathname];
+
+    if (routeTab) {
+      setActiveTab(routeTab);
+    }
+
     if (!smartCommand) return;
 
     if (smartCommand.openTab) {
@@ -64,37 +84,76 @@ const Sell = () => {
     if (smartCommand.customerName) {
       setCustomerName(smartCommand.customerName);
     }
-  }, [location.state]);
+    if (smartCommand.search) {
+      setSearch(smartCommand.search);
+    }
+  }, [location.pathname, location.state, routeTabMap]);
+
+  const tabRouteMap = React.useMemo(
+    () => ({
+      sales: '/sell',
+      pos: '/sell/pos',
+      customers: '/sell/customers',
+      invoices: '/sell/invoices',
+      payments: '/sell/payments',
+      returns: '/sell/returns',
+      quotes: '/sell/quotes',
+      reports: '/sell/reports',
+      agents: '/sell/agents',
+    }),
+    []
+  );
+
+  const openTab = (tabId) => {
+    navigate(tabRouteMap[tabId] || '/sell');
+  };
 
   // Sales data
   const { data: salesData, isLoading: loadingSales } = useQuery(
     ['sales', { search, filterStatus, dateRange }],
     () => salesAPI.getAll({ search, status: filterStatus, startDate: dateRange.startDate, endDate: dateRange.endDate }),
-    { keepPreviousData: true }
+    { keepPreviousData: true, refetchInterval: 10000, refetchOnWindowFocus: true }
   );
 
   // Inventory data for POS
   const { data: inventoryData, isLoading: loadingInventory } = useQuery(
     ['inventory', { search, limit: 12 }],
     () => inventoryAPI.getAll({ search, limit: 12 }),
-    { keepPreviousData: true }
+    { keepPreviousData: true, refetchInterval: 10000, refetchOnWindowFocus: true }
   );
 
   // Customers data
   const { data: customersData, isLoading: loadingCustomers } = useQuery(
     'customers',
-    customersAPI.getAll
+    customersAPI.getAll,
+    { refetchInterval: 10000, refetchOnWindowFocus: true }
   );
 
   const saleMutation = useMutation(salesAPI.create, {
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast.success('Sale completed successfully!');
       setCart([]);
       setCustomerName('Walk-in Customer');
+      setPaymentMethod('cash');
       queryClient.invalidateQueries('sales');
       queryClient.invalidateQueries('inventory');
+      queryClient.invalidateQueries('invoices');
+      queryClient.invalidateQueries('payments');
+      queryClient.invalidateQueries('salesReports');
+      queryClient.invalidateQueries('recent-transactions');
+      queryClient.invalidateQueries('dashboardOverview');
+      queryClient.invalidateQueries('dashboardSales');
+      queryClient.invalidateQueries(['inventory', { search, limit: 12 }]);
+      
+      // Optional: Print receipt or show success modal
+      if (data?.data?.data?.sale_id || data?.data?.sale_id) {
+        console.log('Sale completed with ID:', data?.data?.data?.sale_id || data?.data?.sale_id);
+      }
     },
-    onError: (error) => toast.error(error.response?.data?.message || 'Sale failed'),
+    onError: (error) => {
+      console.error('Sale failed:', error);
+      toast.error(error.response?.data?.message || 'Sale failed. Please try again.');
+    },
   });
 
   const customerMutation = useMutation(customersAPI.create, {
@@ -106,9 +165,14 @@ const Sell = () => {
     onError: (error) => toast.error(error.response?.data?.message || 'Failed to add customer'),
   });
 
-  const sales = salesData?.data?.sales || [];
-  const inventory = inventoryData?.data?.inventory || [];
-  const customers = customersData?.data?.customers || [];
+  const sales = salesData?.data?.data?.sales || [];
+  const inventory = inventoryData?.data?.data?.inventory || [];
+  const customers = customersData?.data?.data?.customers || [];
+
+  // Debug logging for sales data
+  console.log('POS Component - Sales Data:', salesData);
+  console.log('POS Component - Extracted Sales:', sales);
+  console.log('POS Component - Sales Count:', sales.length);
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
@@ -116,18 +180,33 @@ const Sell = () => {
 
   const addToCart = (product) => {
     const existing = cart.find(item => item.product === product._id);
+    const availableStock = product.quantity || 0;
+    
     if (existing) {
-      if (existing.quantity >= product.quantity) return toast.error('Out of stock');
-      setCart(cart.map(item => item.product === product._id ? { ...item, quantity: item.quantity + 1 } : item));
+      if (existing.quantity >= availableStock) {
+        toast.error(`Only ${availableStock} items available in stock`);
+        return;
+      }
+      setCart(cart.map(item => 
+        item.product === product._id 
+          ? { ...item, quantity: item.quantity + 1 } 
+          : item
+      ));
+      toast.success(`${product.name} added to cart`);
     } else {
-      if (product.quantity <= 0) return toast.error('Out of stock');
+      if (availableStock <= 0) {
+        toast.error(`${product.name} is out of stock`);
+        return;
+      }
       setCart([...cart, { 
         product: product._id, 
         name: product.name, 
         price: product.price.selling,
         quantity: 1,
-        stock: product.quantity
+        stock: availableStock,
+        unit: product.unit || 'pcs'
       }]);
+      toast.success(`${product.name} added to cart`);
     }
   };
 
@@ -137,6 +216,13 @@ const Sell = () => {
 
   const updateQuantity = (index, quantity) => {
     if (quantity <= 0) return removeFromCart(index);
+    
+    const item = cart[index];
+    if (quantity > item.stock) {
+      toast.error(`Only ${item.stock} items available in stock`);
+      return;
+    }
+    
     setCart(cart.map((item, i) => i === index ? { ...item, quantity } : item));
   };
 
@@ -153,20 +239,33 @@ const Sell = () => {
   };
 
   const completeSale = () => {
-    if (cart.length === 0) return toast.error('Cart is empty');
+    if (cart.length === 0) {
+      toast.error('Cart is empty');
+      return;
+    }
+    
+    // Validate stock availability before completing sale
+    const outOfStockItems = cart.filter(item => item.quantity > item.stock);
+    if (outOfStockItems.length > 0) {
+      toast.error(`Insufficient stock for: ${outOfStockItems.map(item => item.name).join(', ')}`);
+      return;
+    }
     
     const saleData = {
       customer: customerName,
       items: cart.map(item => ({
         product: item.product,
         quantity: item.quantity,
-        price: item.price
+        price: item.price,
+        unit: item.unit
       })),
       subtotal: calculateTotal(),
       tax: calculateTax(),
       total: calculateGrandTotal(),
       paymentMethod,
-      status: 'completed'
+      status: 'completed',
+      date: new Date().toISOString(),
+      salesperson: user?.name || 'System'
     };
 
     saleMutation.mutate(saleData);
@@ -233,7 +332,7 @@ const Sell = () => {
               .map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => openTab(tab.id)}
                   className={`py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap flex items-center gap-2 ${
                     activeTab === tab.id
                       ? 'border-blue-500 text-blue-600'
@@ -368,7 +467,7 @@ const Sell = () => {
                   <ReceiptRefundIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-gray-500">No sales found</p>
                   <button
-                    onClick={() => setActiveTab('pos')}
+                    onClick={() => openTab('pos')}
                     className="mt-4 btn btn-primary"
                   >
                     Create Your First Sale
@@ -409,18 +508,30 @@ const Sell = () => {
                   {loadingInventory ? (
                     <div className="col-span-full"><LoadingSpinner /></div>
                   ) : inventory.length > 0 ? (
-                    inventory.map((product) => (
-                      <motion.div
-                        key={product._id}
-                        whileHover={{ scale: 1.02 }}
-                        className="bg-gray-50 rounded-lg p-4 cursor-pointer hover:bg-gray-100 transition-colors"
-                        onClick={() => addToCart(product)}
-                      >
-                        <div className="text-sm font-medium text-gray-900">{product.name}</div>
-                        <div className="text-xs text-gray-500">Stock: {product.quantity}</div>
-                        <div className="text-sm font-bold text-green-600">{formatCurrency(product.price.selling)}</div>
-                      </motion.div>
-                    ))
+                    inventory.map((product) => {
+                      const stockStatus = product.quantity <= 0 ? 'out' : product.quantity <= 5 ? 'low' : 'available';
+                      const stockColor = stockStatus === 'out' ? 'text-red-600' : stockStatus === 'low' ? 'text-yellow-600' : 'text-green-600';
+                      
+                      return (
+                        <motion.div
+                          key={product._id}
+                          whileHover={{ scale: 1.02 }}
+                          className={`bg-gray-50 rounded-lg p-4 cursor-pointer hover:bg-gray-100 transition-colors ${
+                            product.quantity <= 0 ? 'opacity-50 cursor-not-allowed' : ''
+                          }`}
+                          onClick={() => product.quantity > 0 && addToCart(product)}
+                        >
+                          <div className="text-sm font-medium text-gray-900">{product.name}</div>
+                          <div className={`text-xs ${stockColor}`}>
+                            Stock: {product.quantity} {product.unit || 'pcs'}
+                          </div>
+                          <div className="text-sm font-bold text-green-600">{formatCurrency(product.price.selling)}</div>
+                          {product.quantity <= 0 && (
+                            <div className="text-xs text-red-600 font-medium">Out of Stock</div>
+                          )}
+                        </motion.div>
+                      );
+                    })
                   ) : (
                     <div className="col-span-full text-center py-8">
                       <p className="text-gray-500">No products found</p>
@@ -438,13 +549,24 @@ const Sell = () => {
                 {/* Customer Selection */}
                 <div className="mb-4">
                   <label className="label">Customer</label>
-                  <input
-                    type="text"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    className="input"
-                    placeholder="Customer name"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      className="input"
+                      placeholder="Customer name"
+                      list="customer-list"
+                    />
+                    <datalist id="customer-list">
+                      {customers.map(customer => (
+                        <option key={customer._id} value={customer.name} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {customers.length} customers available
+                  </div>
                 </div>
 
                 {/* Cart Items */}
@@ -456,12 +578,18 @@ const Sell = () => {
                       <div key={index} className="flex items-center justify-between bg-gray-50 rounded-lg p-2">
                         <div className="flex-1">
                           <div className="text-sm font-medium text-gray-900">{item.name}</div>
-                          <div className="text-xs text-gray-500">{formatCurrency(item.price)}</div>
+                          <div className="text-xs text-gray-500">
+                            {formatCurrency(item.price)} × {item.quantity} {item.unit || 'pcs'}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Available: {item.stock} {item.unit || 'pcs'}
+                          </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => updateQuantity(index, item.quantity - 1)}
                             className="w-6 h-6 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300"
+                            disabled={item.quantity <= 1}
                           >
                             -
                           </button>
@@ -469,6 +597,7 @@ const Sell = () => {
                           <button
                             onClick={() => updateQuantity(index, item.quantity + 1)}
                             className="w-6 h-6 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300"
+                            disabled={item.quantity >= item.stock}
                           >
                             +
                           </button>

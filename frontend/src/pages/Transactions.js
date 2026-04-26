@@ -1,12 +1,17 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useLocation } from 'react-router-dom';
 import {
   MagnifyingGlassIcon,
   PlusIcon,
   EyeIcon,
   CheckCircleIcon,
   XCircleIcon,
-  CurrencyDollarIcon
+  CurrencyDollarIcon,
+  ArrowPathIcon,
+  BellIcon,
+  ClockIcon,
+  DocumentTextIcon
 } from '@heroicons/react/24/outline';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { transactionsAPI } from '../services/api';
@@ -15,6 +20,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import TransactionForm from '../components/TransactionForm';
 
 const Transactions = () => {
+  const location = useLocation();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState({ type: '', status: '', startDate: '', endDate: '' });
   const [showForm, setShowForm] = useState(false);
@@ -23,13 +29,49 @@ const Transactions = () => {
 
   const queryClient = useQueryClient();
 
-  const { data: transactionsData, isLoading } = useQuery(
+  const { data: transactionsData, isLoading, refetch } = useQuery(
     ['transactions', { search, ...filter, page }],
     () => transactionsAPI.getAll({ search, ...filter, page }),
     {
       keepPreviousData: true,
+      refetchInterval: 6000, // Real-time refresh every 6 seconds
+      onSuccess: (data) => {
+        console.log('Transactions data refreshed:', data);
+      }
     }
   );
+
+  // Mutation for updating transaction status
+  const updateTransactionStatusMutation = useMutation(
+    async ({ transactionId, newStatus }) => {
+      const transactions = transactionsData?.data?.transactions || [];
+      const updatedTransactions = transactions.map(transaction => 
+        transaction._id === transactionId ? { ...transaction, status: newStatus, updatedAt: new Date().toISOString() } : transaction
+      );
+      localStorage.setItem('transactions', JSON.stringify(updatedTransactions));
+      queryClient.setQueryData(['transactions', { search, ...filter, page }], { data: { transactions: updatedTransactions } });
+      return updatedTransactions;
+    },
+    {
+      onSuccess: () => {
+        toast.success('Transaction status updated successfully');
+        refetch();
+      },
+      onError: () => {
+        toast.error('Failed to update transaction status');
+      }
+    }
+  );
+
+  // Workflow actions
+  const handleStatusUpdate = (transactionId, newStatus) => {
+    updateTransactionStatusMutation.mutate({ transactionId, newStatus });
+  };
+
+  const handleRefresh = () => {
+    refetch();
+    toast.success('Transactions data refreshed');
+  };
 
   const approveMutation = useMutation(transactionsAPI.approve, {
     onSuccess: () => {
@@ -98,6 +140,12 @@ const Transactions = () => {
   const transactions = transactionsData?.data?.transactions || [];
   const pagination = transactionsData?.data?.pagination || {};
 
+  useEffect(() => {
+    if (location.state?.transactionSearch) {
+      setSearch(location.state.transactionSearch);
+    }
+  }, [location.state]);
+
   return (
     <div className="space-y-6">
       <motion.div
@@ -110,13 +158,23 @@ const Transactions = () => {
           <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
           <p className="text-gray-600">Manage inventory transactions</p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="btn btn-primary flex items-center"
-        >
-          <PlusIcon className="h-5 w-5 mr-2" />
-          New Transaction
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleRefresh}
+            className="btn btn-secondary flex items-center"
+            disabled={isLoading}
+          >
+            <ArrowPathIcon className={`h-5 w-5 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <button
+            onClick={() => setShowForm(true)}
+            className="btn btn-primary flex items-center"
+          >
+            <PlusIcon className="h-5 w-5 mr-2" />
+            New Transaction
+          </button>
+        </div>
       </motion.div>
 
       <motion.div

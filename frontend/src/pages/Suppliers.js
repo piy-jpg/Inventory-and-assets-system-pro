@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useLocation } from 'react-router-dom';
 import {
   MagnifyingGlassIcon,
   PlusIcon,
@@ -14,6 +15,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import SupplierForm from '../components/SupplierForm';
 
 const Suppliers = ({ initialShowForm = false }) => {
+  const location = useLocation();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState({ status: '', category: '' });
   const [showForm, setShowForm] = useState(initialShowForm);
@@ -84,6 +86,12 @@ const Suppliers = ({ initialShowForm = false }) => {
 
   const suppliers = suppliersData?.data?.suppliers || [];
   const pagination = suppliersData?.data?.pagination || {};
+
+  useEffect(() => {
+    if (location.state?.supplierSearch) {
+      setSearch(location.state.supplierSearch);
+    }
+  }, [location.state]);
 
   return (
     <div className="space-y-6">

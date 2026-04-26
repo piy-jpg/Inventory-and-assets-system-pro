@@ -1,28 +1,49 @@
-const User = require('../models/User');
+const { prisma, sanitizeUser } = require('./userService');
 
 const getCurrentUser = async (authUser) => {
   if (!authUser) {
     return null;
   }
 
-  if (authUser._id) {
-    return User.findById(authUser._id);
-  }
-
   if (authUser.user_id) {
-    return User.findOne({ user_id: authUser.user_id });
+    const user = await prisma.user.findUnique({
+      where: { userId: authUser.user_id },
+    });
+    return sanitizeUser(user);
   }
 
   if (authUser.email) {
-    return User.findOne({ email: authUser.email });
+    const user = await prisma.user.findUnique({
+      where: { email: authUser.email },
+    });
+    return sanitizeUser(user);
   }
 
   return null;
 };
 
 const getCurrentUserId = async (authUser) => {
-  const user = await getCurrentUser(authUser);
-  return user?._id || null;
+  if (!authUser) {
+    return null;
+  }
+
+  if (authUser.user_id) {
+    const user = await prisma.user.findUnique({
+      where: { userId: authUser.user_id },
+      select: { id: true },
+    });
+    return user?.id || null;
+  }
+
+  if (authUser.email) {
+    const user = await prisma.user.findUnique({
+      where: { email: authUser.email },
+      select: { id: true },
+    });
+    return user?.id || null;
+  }
+
+  return null;
 };
 
 module.exports = {

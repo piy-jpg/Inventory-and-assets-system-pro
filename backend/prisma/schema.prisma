@@ -1,0 +1,545 @@
+// Smart Inventory System - Complete Prisma Schema
+// This schema includes all features: Products, Customers, Sales, Purchases, Stock Transfers, Expenses, Payment Accounts, Contacts, AI Insights, Alerts
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// Users Table
+model User {
+  id        Int      @id @default(autoincrement())
+  userId    String?  @unique @map("user_id") @db.VarChar(50)
+  username  String   @unique @db.VarChar(50)
+  email     String   @unique @db.VarChar(255)
+  password  String   @db.VarChar(255)
+  firstName String?  @map("first_name") @db.VarChar(50)
+  lastName  String?  @map("last_name") @db.VarChar(50)
+  role      String   @default("employee") @db.VarChar(20)
+  department String? @db.VarChar(100)
+  phone     String?  @db.VarChar(30)
+  profilePhoto String? @map("profile_photo") @db.VarChar(500)
+  isActive  Boolean  @default(true)
+  lastLogin DateTime? @map("last_login")
+  permissions Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  contacts         Contact[]         @relation("ContactCreatedBy")
+  categories       Category[]        @relation("CategoryCreatedBy")
+  suppliers        Supplier[]        @relation("SupplierCreatedBy")
+  customers        Customer[]        @relation("CustomerCreatedBy")
+  inventory        Inventory[]       @relation("InventoryCreatedBy")
+  sales            Sale[]            @relation("SaleCreatedBy")
+  purchases        Purchase[]        @relation("PurchaseCreatedBy")
+  adjustments      Adjustment[]      @relation("AdjustmentCreatedBy")
+  transfers        StockTransfer[]   @relation("TransferCreatedBy")
+  approvedTransfers StockTransfer[]   @relation("TransferApprovedBy")
+  completedTransfers StockTransfer[] @relation("TransferCompletedBy")
+  expenses         Expense[]         @relation("ExpenseCreatedBy")
+  approvedExpenses Expense[]         @relation("ExpenseApprovedBy")
+  paymentAccounts  PaymentAccount[]  @relation("PaymentAccountCreatedBy")
+  templates        NotificationTemplate[] @relation("TemplateCreatedBy")
+  insights         AIInsight[]       @relation("InsightCreatedBy")
+  alerts           Alert[]           @relation("AlertCreatedBy")
+
+  @@map("users")
+}
+
+// Categories Table
+model Category {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(100)
+  description String?  @db.Text
+  color       String   @default("#6B7280") @db.VarChar(7)
+  icon        String?  @db.VarChar(50)
+  parentId    Int?     @map("parent_id")
+  isActive    Boolean  @default(true)
+  createdById Int      @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  parent      Category? @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryHierarchy")
+  createdBy   User      @relation("CategoryCreatedBy", fields: [createdById], references: [id])
+  inventory   Inventory[]
+  contacts    Contact[]
+
+  @@map("categories")
+}
+
+// Suppliers Table
+model Supplier {
+  id          Int      @id @default(autoincrement())
+  supplierId  String   @unique @map("supplier_id") @db.VarChar(50)
+  name        String   @db.VarChar(255)
+  email       String?  @db.VarChar(255)
+  phone       String?  @db.VarChar(20)
+  address     Json
+  products    String?  @db.Text
+  paymentTerms String? @map("payment_terms") @db.VarChar(50)
+  rating      Float    @default(0)
+  isActive    Boolean  @default(true)
+  createdById Int      @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  createdBy   User      @relation("SupplierCreatedBy", fields: [createdById], references: [id])
+  inventory   Inventory[]
+  purchases   Purchase[]
+
+  @@map("suppliers")
+}
+
+// Customers Table
+model Customer {
+  id            Int      @id @default(autoincrement())
+  customerId    String   @unique @map("customer_id") @db.VarChar(50)
+  name          String   @db.VarChar(255)
+  email         String?  @db.VarChar(255)
+  phone         String?  @db.VarChar(20)
+  address       Json
+  companyName   String?  @map("company_name") @db.VarChar(255)
+  gstNumber     String?  @map("gst_number") @db.VarChar(50)
+  creditLimit   Float    @default(0) @map("credit_limit")
+  currentBalance Float  @default(0) @map("current_balance")
+  paymentStatus String  @default("pending") @map("payment_status") @db.VarChar(20)
+  rating        Float    @default(0)
+  tags          Json?
+  notes         String?  @db.Text
+  isActive      Boolean  @default(true)
+  createdById   Int      @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  createdBy     User      @relation("CustomerCreatedBy", fields: [createdById], references: [id])
+  sales         Sale[]
+
+  @@map("customers")
+}
+
+// Inventory Table
+model Inventory {
+  id              Int      @id @default(autoincrement())
+  itemId          String   @unique @map("item_id") @db.VarChar(50)
+  name            String   @db.VarChar(255)
+  description     String?  @db.Text
+  categoryId      Int      @map("category_id")
+  brand           String?  @db.VarChar(100)
+  sku             String?  @db.VarChar(50)
+  priceCost       Float    @map("price_cost")
+  priceSelling    Float    @map("price_selling")
+  quantity        Int      @default(0)
+  minStock        Int      @default(0) @map("min_stock")
+  maxStock        Int      @default(0) @map("max_stock")
+  reorderPoint    Int      @default(0) @map("reorder_point")
+  reorderQuantity Int      @default(0) @map("reorder_quantity")
+  unit            String   @default("pieces") @db.VarChar(20)
+  supplierId      Int?     @map("supplier_id")
+  location        Json
+  tags            Json?
+  specifications  Json?
+  warrantyPeriod  Int?     @map("warranty_period")
+  warrantyType    String?  @map("warranty_type") @db.VarChar(50)
+  status          String   @default("active") @db.VarChar(20)
+  createdById     Int      @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  category       Category       @relation(fields: [categoryId], references: [id])
+  supplier       Supplier?      @relation(fields: [supplierId], references: [id])
+  createdBy      User           @relation("InventoryCreatedBy", fields: [createdById], references: [id])
+  salesItems     SaleItem[]
+  purchaseItems  PurchaseItem[]
+  adjustments    Adjustment[]
+  transfers      StockTransfer[]
+
+  @@map("inventory")
+}
+
+// Sales Table
+model Sale {
+  id            Int      @id @default(autoincrement())
+  saleId        String   @unique @map("sale_id") @db.VarChar(50)
+  customerId    Int      @map("customer_id")
+  saleDate      DateTime @default(now()) @map("sale_date")
+  totalAmount   Float    @map("total_amount")
+  discount      Float    @default(0)
+  taxAmount     Float    @default(0) @map("tax_amount")
+  finalAmount   Float    @map("final_amount")
+  paymentStatus String   @default("pending") @map("payment_status") @db.VarChar(20)
+  paymentMethod String?   @map("payment_method") @db.VarChar(50)
+  notes         String?  @db.Text
+  createdById   Int      @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  customer      Customer   @relation(fields: [customerId], references: [id])
+  createdBy     User       @relation("SaleCreatedBy", fields: [createdById], references: [id])
+  items         SaleItem[]
+
+  @@map("sales")
+}
+
+// Sale Items Table
+model SaleItem {
+  id          Int      @id @default(autoincrement())
+  saleId      Int      @map("sale_id")
+  inventoryId Int      @map("inventory_id")
+  quantity    Int
+  unitPrice   Float    @map("unit_price")
+  totalPrice  Float    @map("total_price")
+  discount    Float    @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  sale        Sale      @relation(fields: [saleId], references: [id])
+  inventory   Inventory @relation(fields: [inventoryId], references: [id])
+
+  @@map("sale_items")
+}
+
+// Purchases Table
+model Purchase {
+  id            Int      @id @default(autoincrement())
+  purchaseId    String   @unique @map("purchase_id") @db.VarChar(50)
+  supplierId    Int      @map("supplier_id")
+  purchaseDate  DateTime @default(now()) @map("purchase_date")
+  totalAmount   Float    @map("total_amount")
+  discount      Float    @default(0)
+  taxAmount     Float    @default(0) @map("tax_amount")
+  finalAmount   Float    @map("final_amount")
+  paymentStatus String   @default("pending") @map("payment_status") @db.VarChar(20)
+  paymentMethod String?   @map("payment_method") @db.VarChar(50)
+  status        String   @default("pending") @db.VarChar(20)
+  notes         String?  @db.Text
+  createdById   Int      @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  supplier      Supplier     @relation(fields: [supplierId], references: [id])
+  createdBy     User         @relation("PurchaseCreatedBy", fields: [createdById], references: [id])
+  items         PurchaseItem[]
+
+  @@map("purchases")
+}
+
+// Purchase Items Table
+model PurchaseItem {
+  id          Int      @id @default(autoincrement())
+  purchaseId  Int      @map("purchase_id")
+  inventoryId Int      @map("inventory_id")
+  quantity    Int
+  unitPrice   Float    @map("unit_price")
+  totalPrice  Float    @map("total_price")
+  discount    Float    @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  purchase     Purchase  @relation(fields: [purchaseId], references: [id])
+  inventory    Inventory @relation(fields: [inventoryId], references: [id])
+
+  @@map("purchase_items")
+}
+
+// Inventory Adjustments Table
+model Adjustment {
+  id            Int      @id @default(autoincrement())
+  adjustmentId  String   @unique @map("adjustment_id") @db.VarChar(50)
+  inventoryId   Int      @map("inventory_id")
+  adjustmentType String  @map("adjustment_type") @db.VarChar(20)
+  quantity      Int
+  reason        String   @db.Text
+  createdById   Int      @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  inventory     Inventory @relation(fields: [inventoryId], references: [id])
+  createdBy     User      @relation("AdjustmentCreatedBy", fields: [createdById], references: [id])
+
+  @@map("inventory_adjustments")
+}
+
+// Transactions Table
+model Transaction {
+  id            Int      @id @default(autoincrement())
+  transactionId String   @unique @map("transaction_id") @db.VarChar(50)
+  type          String   @db.VarChar(20)
+  amount        Float
+  description   String   @db.Text
+  referenceId   String?  @map("reference_id") @db.VarChar(50)
+  referenceType String?  @map("reference_type") @db.VarChar(20)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("transactions")
+}
+
+// Audit Logs Table
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  action    String   @db.VarChar(50)
+  table     String   @db.VarChar(50)
+  recordId  Int      @map("record_id")
+  oldValues Json?    @map("old_values")
+  newValues Json?    @map("new_values")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+}
+
+// Stock Transfers Table
+model StockTransfer {
+  id              Int      @id @default(autoincrement())
+  transferId      String   @unique @map("transfer_id") @db.VarChar(50)
+  fromWarehouse   String   @map("from_warehouse") @db.VarChar(255)
+  toWarehouse     String   @map("to_warehouse") @db.VarChar(255)
+  fromLocation    Json     @map("from_location")
+  toLocation      Json     @map("to_location")
+  inventoryId     Int      @map("inventory_id")
+  quantity        Int
+  status          String   @default("pending") @db.VarChar(20)
+  notes           String?  @db.Text
+  approvedBy      Int?     @map("approved_by")
+  approvedAt      DateTime? @map("approved_at")
+  completedBy     Int?     @map("completed_by")
+  completedAt     DateTime? @map("completed_at")
+  createdById     Int      @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  inventory       Inventory @relation(fields: [inventoryId], references: [id])
+  approvedByUser  User?     @relation("TransferApprovedBy", fields: [approvedBy], references: [id])
+  completedByUser User?     @relation("TransferCompletedBy", fields: [completedBy], references: [id])
+  createdBy       User      @relation("TransferCreatedBy", fields: [createdById], references: [id])
+
+  @@map("stock_transfers")
+}
+
+// Expenses Table
+model Expense {
+  id            Int      @id @default(autoincrement())
+  expenseId     String   @unique @map("expense_id") @db.VarChar(50)
+  category      String   @db.VarChar(50)
+  description   String   @db.Text
+  amount        Float
+  expenseDate   DateTime @default(now()) @map("expense_date")
+  paymentMethod String   @map("payment_method") @db.VarChar(50)
+  status        String   @default("pending") @db.VarChar(20)
+  receiptUrl    String?  @map("receipt_url") @db.VarChar(500)
+  notes         String?  @db.Text
+  approvedBy    Int?     @map("approved_by")
+  approvedAt    DateTime? @map("approved_at")
+  createdById   Int      @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  approvedByUser User?     @relation("ExpenseApprovedBy", fields: [approvedBy], references: [id])
+  createdBy     User      @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+
+  @@map("expenses")
+}
+
+// Payment Accounts Table
+model PaymentAccount {
+  id            Int      @id @default(autoincrement())
+  accountId     String   @unique @map("account_id") @db.VarChar(50)
+  accountName   String   @map("account_name") @db.VarChar(255)
+  accountType   String   @map("account_type") @db.VarChar(50)
+  bankName      String?  @map("bank_name") @db.VarChar(255)
+  accountNumber String?  @map("account_number") @db.VarChar(50)
+  ifscCode      String?  @map("ifsc_code") @db.VarChar(20)
+  balance       Float    @default(0)
+  currency      String   @default("USD") @db.VarChar(10)
+  isActive      Boolean  @default(true)
+  isDefault     Boolean  @default(false)
+  createdById   Int      @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  createdBy     User      @relation("PaymentAccountCreatedBy", fields: [createdById], references: [id])
+
+  @@map("payment_accounts")
+}
+
+// Contacts Table
+model Contact {
+  id            Int      @id @default(autoincrement())
+  contactId     String   @unique @map("contact_id") @db.VarChar(50)
+  firstName     String   @map("first_name") @db.VarChar(100)
+  lastName      String   @map("last_name") @db.VarChar(100)
+  email         String?  @db.VarChar(255)
+  phone         String?  @db.VarChar(20)
+  mobile        String?  @db.VarChar(20)
+  company       String?  @db.VarChar(255)
+  jobTitle      String?  @map("job_title") @db.VarChar(100)
+  department    String?  @db.VarChar(100)
+  address       Json?
+  notes         String?  @db.Text
+  contactType   String   @default("other") @map("contact_type") @db.VarChar(20)
+  categoryId    Int?     @map("category_id")
+  tags          Json?
+  isActive      Boolean  @default(true)
+  isFavorite    Boolean  @default(false)
+  lastContacted DateTime? @map("last_contacted")
+  createdById   Int      @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  category      Category? @relation(fields: [categoryId], references: [id])
+  createdBy     User      @relation("ContactCreatedBy", fields: [createdById], references: [id])
+  interactions  ContactInteraction[]
+  groupMembers  ContactGroupMember[]
+
+  @@map("contacts")
+}
+
+// Contact Interactions Table
+model ContactInteraction {
+  id               Int      @id @default(autoincrement())
+  contactId        Int      @map("contact_id")
+  interactionType  String   @map("interaction_type") @db.VarChar(20)
+  subject          String?  @db.VarChar(255)
+  message          String?  @db.Text
+  interactionDate  DateTime @default(now()) @map("interaction_date")
+  durationMinutes  Int?     @map("duration_minutes")
+  outcome          String?  @db.VarChar(255)
+  nextFollowUp     DateTime? @map("next_follow_up")
+  createdById      Int      @map("created_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  // Relations
+  contact          Contact  @relation(fields: [contactId], references: [id])
+
+  @@map("contact_interactions")
+}
+
+// Contact Groups Table
+model ContactGroup {
+  id          Int      @id @default(autoincrement())
+  groupId     String   @unique @map("group_id") @db.VarChar(50)
+  name        String   @db.VarChar(255)
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  createdById Int      @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  members     ContactGroupMember[]
+
+  @@map("contact_groups")
+}
+
+// Contact Group Members Table
+model ContactGroupMember {
+  id        Int      @id @default(autoincrement())
+  groupId   Int      @map("group_id")
+  contactId Int      @map("contact_id")
+  role      String   @default("member") @db.VarChar(20)
+  joinedAt  DateTime @default(now()) @map("joined_at")
+
+  // Relations
+  group     ContactGroup @relation(fields: [groupId], references: [id])
+  contact   Contact     @relation(fields: [contactId], references: [id])
+
+  @@unique([groupId, contactId])
+  @@map("contact_group_members")
+}
+
+// Contact Documents Table
+model ContactDocument {
+  id            Int      @id @default(autoincrement())
+  contactId     Int      @map("contact_id")
+  documentType  String   @map("document_type") @db.VarChar(20)
+  title         String   @db.VarChar(255)
+  filePath      String?  @map("file_path") @db.VarChar(500)
+  fileSize      Int?     @map("file_size")
+  fileType      String?  @map("file_type") @db.VarChar(50)
+  description   String?  @db.Text
+  uploadDate    DateTime @default(now()) @map("upload_date")
+  createdById   Int      @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("contact_documents")
+}
+
+// Notification Templates Table
+model NotificationTemplate {
+  id          Int      @id @default(autoincrement())
+  templateId  String   @unique @map("template_id") @db.VarChar(50)
+  name        String   @db.VarChar(255)
+  type        String   @db.VarChar(20)
+  subject     String   @db.VarChar(255)
+  message     String   @db.Text
+  variables   Json?
+  isActive    Boolean  @default(true)
+  createdById Int      @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  createdBy   User      @relation("TemplateCreatedBy", fields: [createdById], references: [id])
+
+  @@map("notification_templates")
+}
+
+// AI Insights Table
+model AIInsight {
+  id            Int      @id @default(autoincrement())
+  insightId     String   @unique @map("insight_id") @db.VarChar(50)
+  title         String   @db.VarChar(255)
+  description   String   @db.Text
+  insightType   String   @map("insight_type") @db.VarChar(20)
+  category      String   @db.VarChar(50)
+  data          Json?
+  confidenceScore Float   @map("confidence_score")
+  priority      String   @db.VarChar(20)
+  generatedAt   DateTime @default(now()) @map("generated_at")
+  expiresAt     DateTime @map("expires_at")
+  createdById   Int      @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  createdBy     User      @relation("InsightCreatedBy", fields: [createdById], references: [id])
+
+  @@map("ai_insights")
+}
+
+// Alerts Table
+model Alert {
+  id            Int      @id @default(autoincrement())
+  alertId       String   @unique @map("alert_id") @db.VarChar(50)
+  title         String   @db.VarChar(255)
+  message       String   @db.Text
+  alertType     String   @map("alert_type") @db.VarChar(50)
+  severity      String   @db.VarChar(20)
+  module        String   @db.VarChar(50)
+  referenceId   String?  @map("reference_id") @db.VarChar(50)
+  referenceType String?  @map("reference_type") @db.VarChar(20)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  expiresAt     DateTime @map("expires_at")
+  createdById   Int      @map("created_by")
+
+  // Relations
+  createdBy     User      @relation("AlertCreatedBy", fields: [createdById], references: [id])
+
+  @@map("alerts")
+}

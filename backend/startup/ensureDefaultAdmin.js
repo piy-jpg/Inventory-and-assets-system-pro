@@ -1,57 +1,63 @@
-const User = require('../models/User');
+const {
+  buildUserId,
+  getDefaultPermissions,
+  hashPassword,
+  prisma,
+} = require('../utils/userService');
 
 const DEFAULT_ADMIN = {
-  username: 'admin',
-  email: 'admin@example.com',
-  password: 'password123',
-  firstName: 'Admin',
+  username: 'jaanu@1',
+  email: 'jaanu@example.com',
+  password: '123456',
+  firstName: 'Jaanu',
   lastName: 'User',
   role: 'admin',
   department: 'IT',
   phone: '+1234567890',
-  permissions: [
-    'inventory_read',
-    'inventory_write',
-    'assets_read',
-    'assets_write',
-    'transactions_read',
-    'transactions_write',
-    'users_read',
-    'users_write',
-    'analytics_view',
-    'settings_manage'
-  ]
 };
 
 const ensureDefaultAdmin = async () => {
-  const existingAdmin = await User.findOne({ email: DEFAULT_ADMIN.email });
+  const existingAdmin = await prisma.user.findFirst({
+    where: {
+      OR: [{ email: DEFAULT_ADMIN.email }, { username: DEFAULT_ADMIN.username }],
+    },
+  });
+
+  const permissions = getDefaultPermissions(DEFAULT_ADMIN.role);
 
   if (!existingAdmin) {
-    await User.create(DEFAULT_ADMIN);
+    await prisma.user.create({
+      data: {
+        userId: buildUserId(),
+        username: DEFAULT_ADMIN.username,
+        email: DEFAULT_ADMIN.email,
+        password: await hashPassword(DEFAULT_ADMIN.password),
+        firstName: DEFAULT_ADMIN.firstName,
+        lastName: DEFAULT_ADMIN.lastName,
+        role: DEFAULT_ADMIN.role,
+        department: DEFAULT_ADMIN.department,
+        phone: DEFAULT_ADMIN.phone,
+        isActive: true,
+        permissions,
+      },
+    });
     console.log(`Default admin created: ${DEFAULT_ADMIN.email}`);
     return;
   }
 
-  let shouldSave = false;
-
-  if (existingAdmin.role !== DEFAULT_ADMIN.role) {
-    existingAdmin.role = DEFAULT_ADMIN.role;
-    shouldSave = true;
-  }
-
-  const missingPermissions = DEFAULT_ADMIN.permissions.filter(
-    (permission) => !existingAdmin.permissions?.includes(permission)
-  );
-
-  if (missingPermissions.length > 0) {
-    existingAdmin.permissions = DEFAULT_ADMIN.permissions;
-    shouldSave = true;
-  }
-
-  if (shouldSave) {
-    await existingAdmin.save();
-    console.log(`Default admin permissions refreshed: ${DEFAULT_ADMIN.email}`);
-  }
+  await prisma.user.update({
+    where: { id: existingAdmin.id },
+    data: {
+      userId: existingAdmin.userId || buildUserId(),
+      role: DEFAULT_ADMIN.role,
+      isActive: true,
+      permissions,
+      firstName: existingAdmin.firstName || DEFAULT_ADMIN.firstName,
+      lastName: existingAdmin.lastName || DEFAULT_ADMIN.lastName,
+      department: existingAdmin.department || DEFAULT_ADMIN.department,
+      phone: existingAdmin.phone || DEFAULT_ADMIN.phone,
+    },
+  });
 };
 
 module.exports = ensureDefaultAdmin;
