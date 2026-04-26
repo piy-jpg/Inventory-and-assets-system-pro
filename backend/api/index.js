@@ -35,15 +35,42 @@ const errorHandler = require('../middleware/errorHandler');
 const app = express();
 const server = http.createServer(app);
 
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'https://smart-inventory-system-ten.vercel.app',
+  'https://smart-inventory-system.vercel.app',
+  'https://smart-inventory-frontend.vercel.app',
+  'http://localhost:3000',
+].filter(Boolean);
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+
+  try {
+    const { hostname } = new URL(origin);
+    return hostname.endsWith('.vercel.app') && hostname.startsWith('smart-inventory-system');
+  } catch (error) {
+    return false;
+  }
+};
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (isAllowedOrigin(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+};
+
 // Socket.IO setup
 const io = new Server(server, {
   cors: {
-    origin: process.env.NODE_ENV === 'production' 
-      ? ['https://smart-inventory-system.vercel.app', 'https://smart-inventory-frontend.vercel.app']
-      : ['http://localhost:3000'],
+    ...corsOptions,
     methods: ['GET', 'POST'],
-    credentials: true
-  }
+  },
 });
 
 // Middleware
@@ -52,12 +79,7 @@ app.use(helmet({
 }));
 app.use(compression());
 app.use(morgan('combined'));
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://smart-inventory-system.vercel.app', 'https://smart-inventory-frontend.vercel.app']
-    : ['http://localhost:3000'],
-  credentials: true
-}));
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
